@@ -51,7 +51,7 @@ body{
 
 .brand{ display:flex; align-items:center; height:100% }
 .brand-logo{
-  height:40px; width:auto; object-fit:contain;
+  height:80px; width:auto; object-fit:contain;
   filter:brightness(0) invert(1) contrast(1.2);
   display:block;
 }
