@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<script src="Dashboard.js" defer></script>
+  <link rel="stylesheet" href="Dashboard.css" />
+
+  <!-- OVERRIDES SÓ PARA O MODAL PREMIUM -->
+  <style>
+    /* Esconde por defeito e mostra como overlay centrado */
+    #modal-premium[aria-hidden="true"]{ display: none !important; }
+    #modal-premium{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;        /* acima de tudo */
+    }
+    #modal-premium .backdrop{
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+    }
+    #modal-premium .dialog{
+      position: relative;
+      z-index: 1;
+      width: min(520px, 92vw);
+      background: #fff;
+      border: 1px solid var(--border, #e4e5e8);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.12);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button id="btn-burger" class="icon-btn" aria-label="Alternar menu">
+      <span class="i-burger"></span>
+    </button>
+
+    <!-- LOGO (branco e maior, sem texto ao lado) -->
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-premium" class="btn-premium" title="Unlock Premium">★ Unlock Premium</button>
+
+      <div class="user-area">
+        <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
+          <img src="Icon.png" class="avatar-icon" alt="User" />
+          <span class="avatar-caret">▾</span>
+        </button>
+        <div id="menu-user" class="menu" role="menu" aria-hidden="true">
+          <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
+          <button class="menu-item" role="menuitem" data-action="logout">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <button id="btn-new-scan" class="btn-new">
+          <img class="ico" src="New Scan Eye.png" alt="" /> <span>New Scan</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section">Your Workspace</div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="home">
+          <img class="ico" src="Home.png" alt="" /> <span>Home</span>
+        </button>
+        <button class="nav-item" data-view="scans">
+          <img class="ico" src="Eye.png" alt="" /> <span>Scans</span>
+        </button>
+        <button class="nav-item" data-view="iplist">
+          <img class="ico" src="File.png" alt="" /> <span>IP List</span>
+        </button>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main id="main" class="main">
+      <div class="page-header">
+        <h1 id="page-title">Dashboard</h1>
+      </div>
+
+      <!-- Home -->
+      <section id="view-home" class="view active" aria-labelledby="page-title">
+        <div class="empty">
+          <h3>Bem-vindo ao VulnerAI</h3>
+          <p>Começa já um scan rápido ao teu IP ou domínio.</p>
+          <button class="btn-primary" id="cta-new-scan">Start a Scan</button>
+        </div>
+      </section>
+
+      <!-- New Scan (nova página) -->
+      <section id="view-newscan" class="view" aria-labelledby="page-title">
+        <div class="newscan-wrap">
+          <form id="newscan-form" class="newscan-card" novalidate>
+            <div class="ns-field">
+              <label class="ns-label">Target</label>
+              <input id="ns-target" class="ns-input" placeholder="Host / IP Address" />
+            </div>
+
+            <div class="ns-row">
+              <div class="ns-col">
+                <div class="ns-label">Scan Type</div>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="quick" checked /> Quick</label>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="deep" /> Deep</label>
+              </div>
+
+              <div class="ns-col">
+                <div class="ns-label">Protocol</div>
+                <label class="ns-radio"><input type="radio" name="ns-proto" value="TCP" checked /> TCP</label>
+                <label class="ns-radio"><input type="radio" name="ns-proto" value="UDP" /> UDP</label>
+              </div>
+            </div>
+
+            <label class="ns-check">
+              <input type="checkbox" id="ns-tos" />
+              <span>I am authorized to scan this network and agree to the Terms of Service</span>
+            </label>
+
+            <div class="ns-actions">
+              <button type="submit" id="ns-start" class="btn-primary" disabled>
+                Start Scan
+              </button>
+              <button type="button" id="ns-start-icon" class="btn-icon" disabled>►</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Scans -->
+      <section id="view-scans" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Recent Scans</h3>
+            <button class="btn-secondary" id="scan-refresh">Refresh</button>
+          </div>
+          <div id="scans-table" class="table"></div>
+        </div>
+      </section>
+
+      <!-- IP List -->
+      <section id="view-iplist" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Saved IPs</h3>
+            <div class="ip-actions">
+              <input id="ip-input" class="input" placeholder="ex: 8.8.8.8 ou example.com" />
+              <button id="ip-add" class="btn-secondary">Add</button>
+            </div>
+          </div>
+          <div id="ip-list" class="list"></div>
+        </div>
+      </section>
+    </main>
+
+  </div>
+
+  <!-- Premium (mantido) -->
+  <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
+    <div class="backdrop" data-close></div>
+    <div class="dialog">
+      <button class="close" data-close aria-label="Fechar">×</button>
+      <h2 id="modal-premium-title">Unlock Premium</h2>
+      <p>Obtenha relatórios avançados, agendamento de scans e histórico ilimitado.</p>
+      <ul class="features">
+        <li>⏱ Scans agendados</li>
+        <li>📊 Relatórios completos (PDF/CSV)</li>
+        <li>🔔 Alertas</li>
+      </ul>
+      <div class="actions">
+        <button class="btn-secondary" data-close>Later</button>
+        <button class="btn-primary">Upgrade — €9.99/mês</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+
+  <!-- (Opcional) se quiseres garantir fechar com ESC também, sem tocar no teu JS: -->
+  <script>
+    // Apenas reforço para ESC fechar o modal premium
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const m = document.getElementById('modal-premium');
+        if (m) m.setAttribute('aria-hidden','true');
+      }
+    });
+  </script>
+</body>
+</html>
