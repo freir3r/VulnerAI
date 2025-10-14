@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scan Results</title>
+    <link rel="stylesheet" href="Dashboard.css">
+    <link rel="stylesheet" href="scan_results.css">
+</head>
+<body>
+    <h1>Scan Results</h1>
+    <button id="export-pdf-btn" class="btn-primary">Export to PDF</button>
+
+    <table id="scan-results-table">
+        <thead>
+            <tr>
+                <th>Banner</th>
+                <th>Service</th>
+                <th>CVEs</th>
+                <th>Host</th>
+                <th>Created At</th>
+                <th>Ports</th>
+                <th>Protocols</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Scan data will be inserted here -->
+        </tbody>
+    </table>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="scan_results.js"></script>
+</body>
+</html>
