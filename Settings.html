@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Settings</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button class="icon-btn" onclick="location.href='dashboard.html'" aria-label="Back to Dashboard">
+      <span class="i-back"></span>
+    </button>
+
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1 class="page-title">Settings</h1>
+
+    <section class="card">
+      <h2>Profile</h2>
+      <div class="grid">
+        <label>
+          <span class="lbl">Display name</span>
+          <input id="set-name" class="input" placeholder="Your name" />
+        </label>
+        <label>
+          <span class="lbl">Email</span>
+          <input id="set-email" class="input" placeholder="you@example.com" type="email" />
+        </label>
+        <label>
+          <span class="lbl">Organization</span>
+          <select id="set-org" class="input">
+            <option value="">—</option>
+            <option>Personal</option>
+            <option>IT / Security</option>
+            <option>Consulting</option>
+            <option>Education</option>
+            <option>Other</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Interface</h2>
+      <div class="grid">
+        <label class="row">
+          <input id="set-theme" type="checkbox" class="chk" />
+          <span>Dark header &amp; light content (default). <em>Desliga para tema claro total.</em></span>
+        </label>
+        <label class="row">
+          <input id="set-sidebar-collapsed" type="checkbox" class="chk" />
+          <span>Start with sidebar collapsed</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Scan Defaults</h2>
+      <div class="grid">
+        <label>
+          <span class="lbl">Default scan type</span>
+          <select id="set-scan-type" class="input">
+            <option value="quick">Quick</option>
+            <option value="deep">Deep</option>
+          </select>
+        </label>
+        <label>
+          <span class="lbl">Default protocol</span>
+          <select id="set-scan-proto" class="input">
+            <option value="TCP">TCP</option>
+            <option value="UDP">UDP</option>
+          </select>
+        </label>
+        <label class="row">
+          <input id="set-auto-accept-tos" type="checkbox" class="chk" />
+          <span>Pre-check “I am authorized…” on New Scan</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Data</h2>
+      <div class="grid">
+        <div class="row gap">
+          <button id="btn-export" class="btn-secondary">Export targets & scans (JSON)</button>
+          <label class="btn-secondary file-btn">
+            Import JSON
+            <input id="file-import" type="file" accept="application/json" hidden />
+          </label>
+          <button id="btn-clear" class="btn-secondary danger">Clear local data</button>
+        </div>
+        <p class="muted small">Local storage keys: <code>vulnerai.targets</code>, <code>vulnerai.scans</code>, <code>vulnerai.prefs</code>.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Privacy</h2>
+      <div class="grid">
+        <label class="row">
+          <input id="set-telemetry" type="checkbox" class="chk" />
+          <span>Allow anonymous usage metrics (demo toggle)</span>
+        </label>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="btn-cancel" class="btn-secondary" onclick="location.href='dashboard.html'">Cancel</button>
+      <button id="btn-save" class="btn-primary">Save Changes</button>
+    </div>
+  </main>
+
+  <script src="settings.js"></script>
+</body>
+</html>

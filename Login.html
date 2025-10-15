@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Login</title>
+  <link rel="stylesheet" href="Login.css" />
+</head>
+<body>
+
+<main class="card" aria-labelledby="login-title">
+  <div class="brand" role="img" aria-label="VulnerAI">
+    <img src="VulnerAI Logo.png" alt="VulnerAI logo" />
+  </div>
+
+  <form id="loginForm" autocomplete="on" novalidate>
+    <!-- EMAIL -->
+    <div class="field">
+      <label for="email">Email</label>
+      <div class="control">
+        <input id="email" name="email" type="email" placeholder="seu@email.com" required />
+        <button type="button" class="clear-btn" id="clearEmail">✕</button>
+      </div>
+    </div>
+
+    <!-- PASSWORD -->
+    <div class="field">
+      <label for="password">Password</label>
+      <div class="control">
+        <input id="password" name="password" type="password" placeholder="Password" required minlength="6" />
+        <button type="button" class="eye-btn" id="togglePassword">
+          <svg id="eyeOpen" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg id="eyeClosed" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.86 21.86 0 0 1 5.06-6.06"/>
+            <path d="M1 1l22 22"/>
+            <path d="M9.53 9.53A3 3 0 0 0 14.47 14.47"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- AÇÕES -->
+    <div class="actions">
+      <button class="btn-login" type="submit">Login</button>
+      <button type="button" class="forgot" id="forgotBtn">Esqueceu-se da password?</button>
+    </div>
+  </form>
+</main>
+
+<!-- MODAL DE RECUPERAÇÃO -->
+<div class="overlay" id="overlay" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">Recuperar password</h3>
+    <p>Insira o email associado à sua conta. Enviaremos instruções para repor a password.</p>
+    <input id="forgotEmail" type="email" placeholder="seu@email.com" />
+    <div style="color:#ffb3b3; font-size:13px; display:none;" id="forgotError">Por favor introduza um email válido.</div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cancelForgot">Cancelar</button>
+      <button class="btn-primary" id="sendForgot">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const pwd = document.getElementById('password');
+  const toggle = document.getElementById('togglePassword');
+  const eyeOpen = document.getElementById('eyeOpen');
+  const eyeClosed = document.getElementById('eyeClosed');
+
+  function updateEye() {
+    if (pwd.type === 'password') {
+      eyeClosed.style.display = 'block';
+      eyeOpen.style.display = 'none';
+    } else {
+      eyeClosed.style.display = 'none';
+      eyeOpen.style.display = 'block';
+    }
+  }
+  updateEye();
+
+  toggle.addEventListener('click', () => {
+    pwd.type = pwd.type === 'password' ? 'text' : 'password';
+    updateEye();
+  });
+
+  const emailInput = document.getElementById('email');
+  const clearEmail = document.getElementById('clearEmail');
+  function toggleClearBtn() { clearEmail.style.display = emailInput.value ? 'block' : 'none'; }
+  emailInput.addEventListener('input', toggleClearBtn);
+  clearEmail.addEventListener('click', () => { emailInput.value = ''; toggleClearBtn(); });
+  toggleClearBtn();
+
+  const overlay = document.getElementById('overlay');
+  const forgotBtn = document.getElementById('forgotBtn');
+  const cancelForgot = document.getElementById('cancelForgot');
+  const sendForgot = document.getElementById('sendForgot');
+  const forgotEmail = document.getElementById('forgotEmail');
+  const forgotError = document.getElementById('forgotError');
+
+  function openModal() { overlay.classList.add('open'); forgotEmail.value = ''; forgotError.style.display = 'none'; }
+  function closeModal() { overlay.classList.remove('open'); }
+  forgotBtn.addEventListener('click', openModal);
+  cancelForgot.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  function validEmail(e) { return /\S+@\S+\.\S+/.test(e); }
+  sendForgot.addEventListener('click', () => {
+    if (!validEmail(forgotEmail.value.trim())) { forgotError.style.display = 'block'; return; }
+    alert('Se o email existir no sistema, receberá instruções para repor a password.');
+    closeModal();
+  });
+
+  const form = document.getElementById('loginForm');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = emailInput.value.trim();
+    if (!validEmail(email)) { alert('Por favor introduza um email válido.'); return; }
+    if (pwd.value.length < 6) { alert('Password demasiado curta.'); return; }
+    alert('Login válido — aqui faria ligação ao backend.');
+  });
+</script>
+</body>
+</html>

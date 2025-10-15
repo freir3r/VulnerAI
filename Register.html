@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Registo</title>
+
+  <!-- Fonte (opcional) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="register.css" />
+</head>
+<body>
+
+  <div class="bg-grid"></div>
+
+  <main class="card" aria-labelledby="register-title">
+    <header class="brand">
+      <img class="logo" src="VulnerAI Logo.png" alt="Logótipo VulnerAI" />
+      <h1 id="register-title" class="sr-only">Criar conta na VulnerAI</h1>
+    </header>
+
+    <form class="form" action="#" method="post" novalidate>
+      <label class="field">
+        <span class="label">Full Name</span>
+        <input type="text" name="full_name" placeholder="Full Name" autocomplete="name" required />
+      </label>
+
+      <label class="field">
+        <span class="label">Email</span>
+        <input type="email" name="email" placeholder="Email" autocomplete="email" required />
+      </label>
+
+      <label class="field">
+        <span class="label">Password</span>
+        <input type="password" name="password" placeholder="Password" autocomplete="new-password" required />
+      </label>
+
+      <label class="field">
+        <span class="label">Confirm Password</span>
+        <input type="password" name="confirm_password" placeholder="Confirm Password" autocomplete="new-password" required />
+      </label>
+
+      <!-- Organization como dropdown -->
+      <label class="field">
+        <span class="label">Organization (Optional)</span>
+        <div class="select-wrap">
+          <select name="organization">
+            <option value="" selected>Choose an option (optional)</option>
+            <option>Startup</option>
+            <option>Enterprise</option>
+            <option>Government</option>
+            <option>University / Research</option>
+            <option>NGO / Non-profit</option>
+            <option>Consultancy / Freelancer</option>
+            <option>Cybersecurity Vendor</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </label>
+
+      <!-- Termos: abre modal -->
+      <label class="checkbox">
+        <input type="checkbox" name="terms" required />
+        <span> I accept <a href="#" class="link-modal" data-target="#terms-modal">Terms &amp; Privacy Policy</a></span>
+      </label>
+
+      <button type="submit" class="btn-primary">Register</button>
+    </form>
+  </main>
+
+  <!-- Modal: Terms & Privacy -->
+  <div class="modal" id="terms-modal" aria-hidden="true" role="dialog" aria-labelledby="terms-title">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog" role="document" tabindex="-1">
+      <button class="modal-close" type="button" aria-label="Fechar" data-close>×</button>
+      <h2 id="terms-title">Terms & Privacy Policy</h2>
+      <div class="modal-body">
+        <ul>
+          <li>Usamos os seus dados apenas para criar e gerir a sua conta.</li>
+          <li>Pode solicitar a eliminação dos dados a qualquer momento.</li>
+          <li>Cookies apenas para sessão e segurança.</li>
+        </ul>
+        <p>Ao continuar, concorda com as nossas condições de utilização e política de privacidade.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-outline" type="button" data-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="register.js"></script>
+</body>
+</html>
