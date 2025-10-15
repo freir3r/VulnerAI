@@ -1,0 +1,12 @@
+API/keys/firebase-sa.json
+
+node_modules/
+
+.env
+.env.local
+.env.*.local
+dist/
+build/
+covrage/
+.DS_Store
+Thumbs.db
