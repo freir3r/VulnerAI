@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-PT">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,47 +8,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-<script src="Dashboard.js" defer></script>
-  <link rel="stylesheet" href="Dashboard.css" />
 
-  <!-- OVERRIDES SÓ PARA O MODAL PREMIUM -->
-  <style>
-    /* Esconde por defeito e mostra como overlay centrado */
-    #modal-premium[aria-hidden="true"]{ display: none !important; }
-    #modal-premium{
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;        /* acima de tudo */
-    }
-    #modal-premium .backdrop{
-      position: absolute;
-      inset: 0;
-      background: rgba(0,0,0,.45);
-    }
-    #modal-premium .dialog{
-      position: relative;
-      z-index: 1;
-      width: min(520px, 92vw);
-      background: #fff;
-      border: 1px solid var(--border, #e4e5e8);
-      border-radius: 14px;
-      padding: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.12);
-    }
-  </style>
+  <link rel="stylesheet" href="dashboard.css" />
 </head>
 <body>
 
   <!-- Topbar -->
   <header class="topbar">
-    <button id="btn-burger" class="icon-btn" aria-label="Alternar menu">
+    <button id="btn-burger" class="icon-btn" aria-label="Toggle menu">
       <span class="i-burger"></span>
     </button>
 
-    <!-- LOGO (branco e maior, sem texto ao lado) -->
+    <!-- LOGO (white, no text) -->
     <div class="brand">
       <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
     </div>
@@ -104,19 +75,28 @@
       <!-- Home -->
       <section id="view-home" class="view active" aria-labelledby="page-title">
         <div class="empty">
-          <h3>Bem-vindo ao VulnerAI</h3>
-          <p>Começa já um scan rápido ao teu IP ou domínio.</p>
+          <h3>Welcome to VulnerAI</h3>
+          <p>Start a quick scan on your IP or domain.</p>
           <button class="btn-primary" id="cta-new-scan">Start a Scan</button>
         </div>
       </section>
 
-      <!-- New Scan (nova página) -->
+      <!-- New Scan -->
       <section id="view-newscan" class="view" aria-labelledby="page-title">
         <div class="newscan-wrap">
           <form id="newscan-form" class="newscan-card" novalidate>
             <div class="ns-field">
               <label class="ns-label">Target</label>
-              <input id="ns-target" class="ns-input" placeholder="Host / IP Address" />
+
+              <div class="host-select" style="margin-bottom:10px;">
+                <select id="ns-choose" class="input" aria-label="Choose saved target">
+                  <option value="">Choose from saved targets…</option>
+                  <!-- JS populates -->
+                </select>
+                <span class="muted small" style="margin-left:8px;">or type a host/IP below</span>
+              </div>
+
+              <input id="ns-target" class="ns-input" placeholder="Host / IP Address (e.g. 8.8.8.8 or example.com)" />
             </div>
 
             <div class="ns-row">
@@ -135,71 +115,215 @@
 
             <label class="ns-check">
               <input type="checkbox" id="ns-tos" />
-              <span>I am authorized to scan this network and agree to the Terms of Service</span>
+              <span>I declare that I am authorized to scan this network and accept the Terms of Service</span>
             </label>
 
             <div class="ns-actions">
-              <button type="submit" id="ns-start" class="btn-primary" disabled>
-                Start Scan
-              </button>
-              <button type="button" id="ns-start-icon" class="btn-icon" disabled>►</button>
+              <button type="submit" id="ns-start" class="btn-primary" disabled>Start Scan</button>
             </div>
           </form>
         </div>
       </section>
 
-      <!-- Scans -->
+      <!-- Scans (com painel de vulnerabilidades) -->
       <section id="view-scans" class="view">
-        <div class="panel">
-          <div class="panel-head">
-            <h3>Recent Scans</h3>
-            <button class="btn-secondary" id="scan-refresh">Refresh</button>
+        <div class="panel" id="scan-results">
+          <!-- Target & Scan Type -->
+          <div class="kv">
+            <div class="label">Target</div>
+            <div class="value" id="sr-target">—</div>
           </div>
-          <div id="scans-table" class="table"></div>
-        </div>
-      </section>
+          <div class="kv">
+            <div class="label">Scan Type</div>
+            <div class="value" id="sr-type">—</div>
+          </div>
 
-      <!-- IP List -->
-      <section id="view-iplist" class="view">
-        <div class="panel">
-          <div class="panel-head">
-            <h3>Saved IPs</h3>
-            <div class="ip-actions">
-              <input id="ip-input" class="input" placeholder="ex: 8.8.8.8 ou example.com" />
-              <button id="ip-add" class="btn-secondary">Add</button>
+          <!-- Summary title -->
+          <div class="res-head">Summary</div>
+
+          <!-- Summary: metrics + gauge -->
+          <div class="summary-grid">
+            <div class="metric">
+              <div class="num" id="sr-active-hosts">0</div>
+              <div class="label">Active Hosts</div>
+            </div>
+
+            <div class="gauge">
+              <svg class="gauge-svg" viewBox="0 0 120 70" aria-hidden="true">
+                <path id="g-track" class="g-track" d="M10,60 A50,50 0 0 1 110,60"/>
+                <path id="g-bar" class="g-bar"   d="M10,60 A50,50 0 0 1 110,60"/>
+              </svg>
+              <div class="g-value" id="sr-ports-text">0/0</div>
+              <div class="label">Open Ports</div>
+            </div>
+
+            <div class="metric">
+              <div class="num" id="sr-cves">0</div>
+              <div class="label">CVEs</div>
             </div>
           </div>
-          <div id="ip-list" class="list"></div>
+
+          <!-- Host selector + table -->
+          <div class="res-table">
+            <div style="display:flex; align-items:center; gap:8px; margin:4px 0 8px;">
+              <label for="sr-host" class="label" style="font-weight:600;">Host</label>
+              <select id="sr-host" class="input input-sm" style="max-width:220px;"></select>
+
+              <button class="btn-secondary" id="scan-refresh" style="margin-left:auto;">Refresh</button>
+            </div>
+
+            <table class="simple" id="sr-table">
+              <thead>
+                <tr>
+                  <th>Port</th>
+                  <th>Service</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody><!-- rows via JS --></tbody>
+            </table>
+          </div>
+
+          <!-- Vulnerabilities panel -->
+          <div class="vuln-panel">
+            <div class="vuln-head">
+              <div class="vh-left">
+                <h4 class="vh-title">Vulnerabilities</h4>
+                <span class="vh-sub muted">(CVEs detected)</span>
+              </div>
+              <div class="vh-actions">
+                <button class="btn-secondary" id="btn-clear-trivial" title="Hide CVEs with CVSS <= 1.0">
+                  Clear Trivial CVEs (CVSS ≤ 1.0)
+                </button>
+              </div>
+            </div>
+
+            <div class="vuln-table-wrap">
+              <table class="simple" id="sr-cves-table" aria-label="Detected CVEs">
+                <thead>
+                  <tr>
+                    <th style="width:110px;">CVE</th>
+                    <th>Title</th>
+                    <th style="width:120px;">CVSS</th>
+                    <th style="width:120px;">Severity</th>
+                  </tr>
+                </thead>
+                <tbody><!-- rows via JS --></tbody>
+              </table>
+            </div>
+          </div>
+          <!-- /Vulnerabilities panel -->
         </div>
       </section>
-    </main>
 
+      <!-- IP LIST → TARGET PAGE -->
+      <section id="view-iplist" class="view">
+        <div class="panel targets-panel">
+          <div class="panel-head">
+            <div class="ph-left">
+              <h3>Targets</h3>
+              <span class="muted" id="targets-count">0 saved</span>
+            </div>
+
+            <div class="toolbar">
+              <button id="iplist-open-add" class="btn-primary">+ Add Target</button>
+
+              <div class="search-wrap">
+                <input id="tgt-search" class="input" placeholder="Search targets…" />
+              </div>
+
+              <div class="sort-wrap">
+                <label class="muted small" for="tgt-sort">Sort by</label>
+                <select id="tgt-sort" class="input input-sm">
+                  <option value="recent" selected>Most recent</option>
+                  <option value="name">Name (A→Z)</option>
+                  <option value="scans">Scans (desc)</option>
+                  <option value="cves">CVEs (desc)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk" aria-hidden="true">
+            <div class="bulk-left">
+              <label class="chk"><input type="checkbox" id="tgt-checkall" /> <span>Select all</span></label>
+              <span class="muted small" id="tgt-selected">0 selected</span>
+            </div>
+            <div class="bulk-actions">
+              <button class="btn-secondary" id="tgt-bulk-scan">Scan selected</button>
+              <button class="btn-secondary" id="tgt-bulk-tags">Tag</button>
+              <button class="btn-secondary danger" id="tgt-bulk-delete">Delete</button>
+            </div>
+          </div>
+
+          <div class="targets-empty" id="targets-empty">
+            <h4>No targets saved yet.</h4>
+            <p class="muted">Add a host (IP/domain) or a network (CIDR). They’ll appear later as quick options on the Scan page — or you can always type the IP directly.</p>
+          </div>
+
+          <div id="targets-list" class="targets-list"></div>
+        </div>
+
+        <!-- Add Target Popup -->
+        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog" aria-labelledby="iplist-modal-title">
+          <div class="iplist-backdrop" data-close></div>
+          <div class="iplist-dialog">
+            <button class="iplist-close" data-close aria-label="Close">×</button>
+            <h2 id="iplist-modal-title">Add Target</h2>
+
+            <form id="iplist-form" novalidate>
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-name">Name/Title</label>
+                <input id="iplist-name" class="iplist-input" placeholder='e.g., "Home PC (local)"' required />
+              </div>
+
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-kind">Type</label>
+                <select id="iplist-kind" class="iplist-input">
+                  <option value="host" selected>Host/IP</option>
+                  <option value="network">Network/CIDR</option>
+                </select>
+              </div>
+
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-value">Host/IP (or CIDR)</label>
+                <input id="iplist-value" class="iplist-input" placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
+                <p class="iplist-help">IPv4, domain names, and CIDR ranges are accepted.</p>
+              </div>
+
+              <div class="iplist-actions">
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="submit" class="btn-primary">Save Target</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+    </main>
   </div>
 
-  <!-- Premium (mantido) -->
+  <!-- Premium (kept) -->
   <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
     <div class="backdrop" data-close></div>
     <div class="dialog">
-      <button class="close" data-close aria-label="Fechar">×</button>
+      <button class="close" data-close aria-label="Close">×</button>
       <h2 id="modal-premium-title">Unlock Premium</h2>
-      <p>Obtenha relatórios avançados, agendamento de scans e histórico ilimitado.</p>
+      <p>Get advanced reports, scheduled scans, and unlimited history.</p>
       <ul class="features">
-        <li>⏱ Scans agendados</li>
-        <li>📊 Relatórios completos (PDF/CSV)</li>
-        <li>🔔 Alertas</li>
+        <li>⏱ Scheduled scans</li>
+        <li>📊 Full reports (PDF/CSV)</li>
+        <li>🔔 Alerts</li>
       </ul>
       <div class="actions">
         <button class="btn-secondary" data-close>Later</button>
-        <button class="btn-primary">Upgrade — €9.99/mês</button>
+        <button class="btn-primary">Upgrade — €9.99/month</button>
       </div>
     </div>
   </div>
 
-  <script src="app.js"></script>
-
-  <!-- (Opcional) se quiseres garantir fechar com ESC também, sem tocar no teu JS: -->
+  <script src="Dashboard.js"></script>
   <script>
-    // Apenas reforço para ESC fechar o modal premium
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const m = document.getElementById('modal-premium');
