@@ -1,0 +1,256 @@
+/* General Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+}
+
+body {
+  background-color: #272727;
+  color: #fff;
+}
+
+/* HERO SECTION */
+.hero {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.hero-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 85%;
+  max-width: 1200px;
+  gap: 2rem;
+}
+
+.hero-text {
+  flex: 1;
+  text-align: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.logo img {
+  width: 40px;
+  height: 40px;
+}
+
+.logo h1 {
+  font-size: 2.2rem;
+  font-weight: 600;
+}
+
+.hero-text p {
+  margin: 1rem 0 2rem;
+  font-size: 1.1rem;
+  color: #d0d0d0;
+  
+  
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  border: none;
+  border-radius: 20px;
+  padding: 0.7rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background-color: #d6d6d6;
+  color: #111;
+}
+
+.btn-primary:hover {
+  background-color: #fff;
+}
+
+.btn-secondary {
+  background-color: #b5b5b5;
+  color: #111;
+}
+
+.btn-secondary:hover {
+  background-color: #fff;
+}
+
+.hero-illustration {
+  flex: 1;
+  display: flex;
+  justify-content: left;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+.hero-illustration img {
+  max-width: 300px;
+  height: auto;
+}
+
+/* WORKFLOW SECTION */
+.workflow {
+  background-color: #1a1a1a;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+  padding: 4rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  min-height: 80vh;
+}
+
+.workflow-container {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+}
+
+/* Linha vertical central */
+.workflow-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(-50%);
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6rem;
+  position: relative;
+  min-height: 80px;
+}
+
+.workflow-step:last-child {
+  margin-bottom: 0;
+}
+
+/* Ícone à esquerda, texto à direita */
+.workflow-step.left .step-icon {
+  position: absolute;
+  left: calc(50% - 80px);
+  transform: translateX(-50%);
+}
+
+.workflow-step.left .step-content {
+  margin-left: calc(50% + 30px);
+  text-align: left;
+}
+
+/* Ícone à direita, texto à esquerda */
+.workflow-step.right .step-icon {
+  position: absolute;
+  right: calc(50% - 80px);
+  transform: translateX(50%);
+}
+
+.workflow-step.right .step-content {
+  margin-right: calc(50% + 30px);
+  text-align: right;
+}
+
+.step-icon {
+  width: 60px;
+  height: 60px;
+  background: #2a2a2a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  z-index: 2;
+}
+
+.step-icon img {
+  width: 64px;
+  height: 64px;
+}
+
+.step-content {
+  max-width: 280px;
+}
+
+.step-content p {
+  color: #d0d0d0;
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Linhas horizontais conectoras */
+.connector-line {
+  position: absolute;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.workflow-step.left .connector-line {
+  left: calc(50% - 30px);
+  width: 80px;
+}
+
+.workflow-step.right .connector-line {
+  right: calc(50% - 30px);
+  width: 80px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .workflow-step {
+    flex-direction: column;
+    margin-bottom: 4rem;
+  }
+
+  .workflow-step.left .step-icon,
+  .workflow-step.right .step-icon {
+    position: relative;
+    left: auto;
+    right: auto;
+    transform: none;
+    margin-bottom: 1rem;
+  }
+
+  .workflow-step.left .step-content,
+  .workflow-step.right .step-content {
+    margin: 0;
+    text-align: center;
+  }
+
+  .connector-line {
+    display: none;
+  }
+}
