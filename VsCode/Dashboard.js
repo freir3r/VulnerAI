@@ -1,5 +1,19 @@
 /* ====== Dashboard.js ====== */
 
+/* ====== AUTH (guard) ====== */
+const AUTH_KEY = 'vulnerai.auth';
+function isLoggedIn(){
+  try { return !!JSON.parse(localStorage.getItem(AUTH_KEY)); }
+  catch { return false; }
+}
+function requireAuth(){
+  if(!isLoggedIn()){
+    window.location.href = 'login.html';
+    return false;
+  }
+  return true;
+}
+
 /* ====== STATE ====== */
 const state = {
   targets: [],     // {id, kind, name, value, addedAt, scans, cves, lastScan, tags:[], risk}
@@ -13,7 +27,7 @@ const qsa = (s, el=document)=> [...el.querySelectorAll(s)];
 const uid = ()=> Math.random().toString(36).slice(2,9);
 
 /* ====== PERSISTENCE (targets/scans) ====== */
-const LS_KEY = "vulnerai.targets";
+const LS_KEY   = "vulnerai.targets";
 const LS_SCANS = "vulnerai.scans";
 
 function loadTargets(){
@@ -159,8 +173,6 @@ function simulateOpenPorts(proto){
   const shuffled = [...pool].sort(()=>Math.random()-0.5);
   return shuffled.slice(0, n);
 }
-
-// gera um conjunto de CVEs (alguns triviais <= 1.0)
 function simulateCVEs(openPorts){
   const sampleScores = [0.0, 0.1, 0.7, 1.0, 2.8, 3.6, 5.4, 6.8, 7.2, 8.1, 9.8];
   const n = Math.max(0, (openPorts?.length || 0) + Math.floor(Math.random()*3) - 1);
@@ -182,7 +194,6 @@ function simulateCVEs(openPorts){
   }
   return picks;
 }
-
 function cvssToSeverity(score){
   if(score <= 1.0) return "TRIVIAL";
   if(score < 4.0)  return "LOW";
@@ -202,8 +213,8 @@ function addScan({targetValue, targetId=null, type="quick", proto="TCP"}){
     startedAt: Date.now(),
     status: "Completed",
     openPorts,
-    cveList,                // lista completa para render
-    cves: cveList.length    // contador mostrado no resumo
+    cveList,
+    cves: cveList.length
   };
   scans.unshift(scan);
   saveScans(scans);
@@ -225,7 +236,6 @@ function addScan({targetValue, targetId=null, type="quick", proto="TCP"}){
 function getLastScanForUI(){
   try{ const scans = loadScans(); return scans[0] || null; } catch { return null; }
 }
-
 function drawGauge(percent){
   const path = document.getElementById("g-bar");
   if(!path) return;
@@ -234,7 +244,6 @@ function drawGauge(percent){
   path.setAttribute("stroke-dasharray", `${val} ${totalLen-val}`);
   path.setAttribute("stroke-dashoffset", "0");
 }
-
 function statusClass(s){
   return s==="open" ? "status-open" : s==="filtered" ? "status-filtered" : "status-closed";
 }
@@ -263,7 +272,6 @@ function renderScanResultsPage(){
     ]
   };
 
-  // construir "model" a partir do último scan guardado ou fallback
   let model;
   if(last){
     const open = last.openPorts?.length ?? 0;
@@ -315,9 +323,11 @@ function renderScanResultsPage(){
   }
   fillPortsTable(model.hosts[0]);
 
-  // garantir secção de CVEs e renderizar
-  ensureCVESection();
+  // CVEs (usar sempre a tabela existente no HTML)
   renderCVETable(model.cveList);
+
+  // manter label do botão coerente
+  updateClearButtonLabel();
 }
 
 function fillPortsTable(host){
@@ -334,43 +344,8 @@ function fillPortsTable(host){
   }).join("");
 }
 
-/* ====== CVE PANEL (create if missing) ====== */
-function ensureCVESection(){
-  const panel = qs("#scan-results");
-  if (!panel) return;
-
-  if (!qs("#cve-panel")) {
-    const div = document.createElement("div");
-    div.id = "cve-panel";
-    div.className = "res-table";
-    div.innerHTML = `
-      <div style="display:flex; align-items:center; gap:8px; margin:4px 0 8px;">
-        <h4 style="margin:0; font-size:15px; font-weight:700;">Vulnerabilities</h4>
-        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-          <button class="btn-secondary" id="btn-clear-trivial" title="Remove CVEs with CVSS ≤ 1.0">
-            Clear Trivial CVEs (CVSS ≤ 1.0)
-          </button>
-        </div>
-      </div>
-      <table class="simple" id="sr-cves-table">
-        <thead>
-          <tr>
-            <th>CVE</th>
-            <th>Title</th>
-            <th>CVSS</th>
-            <th>Severity</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    `;
-    panel.appendChild(div);
-  }
-}
-
-/* ====== CVE TABLE RENDER & FILTER ====== */
+/* ====== CVE TABLE RENDER ====== */
 function renderCVETable(cves){
-  ensureCVESection();
   const tb = qs("#sr-cves-table tbody");
   if(!tb) return;
   const rows = (cves||[]).map(v=>{
@@ -385,33 +360,81 @@ function renderCVETable(cves){
     </tr>`;
   }).join("");
   tb.innerHTML = rows;
-  qs("#sr-cves").textContent = cves?.length ?? 0;
+  const counter = qs("#sr-cves");
+  if(counter) counter.textContent = cves?.length ?? 0;
 }
 
+/* ====== CLEAR BUTTON: threshold & label ====== */
+function updateClearButtonLabel(){
+  const btn = qs("#btn-clear-trivial");
+  if(!btn) return;
+  const THRESH = parseFloat(localStorage.getItem("vulnerai.clearThreshold") || "4.0");
+  if(THRESH <= 1.0){
+    btn.textContent = "Clear Trivial CVEs (CVSS ≤ 1.0)";
+    btn.title = "Remove CVEs with CVSS ≤ 1.0";
+  }else{
+    btn.textContent = `Clear Low & Trivial (CVSS < ${THRESH})`;
+    btn.title = `Remove CVEs with CVSS < ${THRESH}`;
+  }
+}
+function cycleClearThreshold(){
+  const current = parseFloat(localStorage.getItem("vulnerai.clearThreshold") || "4.0");
+  const next = current <= 1.0 ? 4.0 : 1.0;
+  localStorage.setItem("vulnerai.clearThreshold", String(next));
+  updateClearButtonLabel();
+}
+
+/* ====== CLEAR ACTION ====== */
 function handleClearTrivial(){
   const scans = loadScans();
-  if(!scans.length){
-    alert("No scans to clean.");
-    return;
-  }
+  if(!scans.length){ alert("No scans to clean."); return; }
+
+  const THRESH = parseFloat(localStorage.getItem("vulnerai.clearThreshold") || "4.0");
+
   const last = scans[0];
-  if(!Array.isArray(last.cveList)){
-    last.cveList = [];
-  }
+  if(!Array.isArray(last.cveList)) last.cveList = [];
+
   const before = last.cveList.length;
-  last.cveList = last.cveList.filter(v => (v.cvss ?? 0) > 1.0);
+  last.cveList = last.cveList.filter(v => (v.cvss ?? 0) >= THRESH);
   last.cves = last.cveList.length;
+
   saveScans(scans);
 
-  renderCVETable(last.cveList);
+  // re-render geral
+  renderScanResultsPage();
+
   const removed = before - last.cveList.length;
   alert(removed > 0
-    ? `Removed ${removed} trivial CVE(s) with CVSS ≤ 1.0.`
-    : "No trivial CVEs (CVSS ≤ 1.0) found.");
+    ? `Removed ${removed} CVE(s) with CVSS < ${THRESH}.`
+    : `No CVEs with CVSS < ${THRESH} found.`);
 }
 
-/* ====== INIT (único) ====== */
+/* ====== INIT ====== */
 function init(){
+  if(!requireAuth()) return; // guard
+
+  // ---- PREFERÊNCIAS ----
+  const prefs = (()=>{ try{return JSON.parse(localStorage.getItem("vulnerai.prefs")||"{}");}catch{return{}} })();
+
+  // DARK MODE
+  const themeQuick = localStorage.getItem("vulnerai.theme");
+  const isDark = themeQuick ? (themeQuick === "dark") : !!prefs.themeDarkHeader;
+  document.body.classList.toggle("dark", isDark);
+  window.addEventListener("storage", (e)=>{
+    if(e.key === "vulnerai.prefs" || e.key === "vulnerai.theme"){
+      try{
+        const quick = localStorage.getItem("vulnerai.theme");
+        const p = JSON.parse(localStorage.getItem("vulnerai.prefs")||"{}");
+        document.body.classList.toggle("dark", quick ? (quick==="dark") : !!p.themeDarkHeader);
+      }catch(_){}
+    }
+  });
+
+  // Threshold default (LOW+TRIVIAL)
+  if(localStorage.getItem("vulnerai.clearThreshold") == null){
+    localStorage.setItem("vulnerai.clearThreshold", "4.0");
+  }
+
   loadTargets();
   renderTargets();
   populateSavedTargetsDropdown();
@@ -423,9 +446,12 @@ function init(){
   qs("#btn-new-scan")?.addEventListener("click", ()=> setActiveView("newscan"));
   qs("#cta-new-scan")?.addEventListener("click", ()=> setActiveView("newscan"));
 
-  /* HAMBURGER → colapsar sidebar */
+  /* SIDEBAR */
   const sidebar = qs("#sidebar");
   const burger  = qs("#btn-burger");
+  if(localStorage.getItem("vulnerai.sidebarCollapsed") == null){
+    localStorage.setItem("vulnerai.sidebarCollapsed", prefs.sidebarCollapsedDefault ? "1" : "0");
+  }
   const SAVED = localStorage.getItem("vulnerai.sidebarCollapsed")==="1";
   if(SAVED) sidebar?.classList.add("collapsed");
   burger?.addEventListener("click", (e)=>{
@@ -435,17 +461,11 @@ function init(){
     localStorage.setItem("vulnerai.sidebarCollapsed", collapsed ? "1" : "0");
   });
 
-  /* USER MENU (avatar) */
+  /* USER MENU */
   const userBtn = qs("#btn-user");
   const userMenu = qs("#menu-user");
-  function closeUserMenu(){
-    userBtn?.setAttribute("aria-expanded","false");
-    userMenu?.setAttribute("aria-hidden","true");
-  }
-  function openUserMenu(){
-    userBtn?.setAttribute("aria-expanded","true");
-    userMenu?.setAttribute("aria-hidden","false");
-  }
+  function closeUserMenu(){ userBtn?.setAttribute("aria-expanded","false"); userMenu?.setAttribute("aria-hidden","true"); }
+  function openUserMenu(){  userBtn?.setAttribute("aria-expanded","true");  userMenu?.setAttribute("aria-hidden","false"); }
   userBtn?.addEventListener("click", (e)=>{
     e.stopPropagation();
     const isOpen = userMenu?.getAttribute("aria-hidden")==="false";
@@ -461,8 +481,11 @@ function init(){
     if(!item) return;
     const action = item.dataset.action;
     closeUserMenu();
-    if(action==="settings"){ alert("Open Settings (placeholder)"); }
-    if(action==="logout"){ alert("Logout (placeholder)"); }
+    if(action==="settings"){ window.location.href = "settings.html"; }
+    if(action==="logout"){
+      localStorage.removeItem(AUTH_KEY);   // limpa sessão
+      window.location.href = "login.html"; // volta ao login
+    }
   });
 
   /* PREMIUM MODAL */
@@ -590,6 +613,19 @@ function init(){
     if(targetInp) targetInp.value = t ? t.value : "";
     updateStartEnabled();
   });
+
+  // defaults de scan vindos das prefs
+  (function applyScanDefaults(){
+    const type  = prefs.scanType  || "quick";
+    const proto = prefs.scanProto || "TCP";
+    const rType  = document.querySelector(`input[name="ns-type"][value="${type}"]`);
+    const rProto = document.querySelector(`input[name="ns-proto"][value="${proto}"]`);
+    if(rType)  rType.checked = true;
+    if(rProto) rProto.checked = true;
+    if(prefs.autoAcceptTos && tos){ tos.checked = true; }
+    updateStartEnabled();
+  })();
+
   updateStartEnabled();
 
   qs("#newscan-form")?.addEventListener("submit", (e)=>{
@@ -614,16 +650,42 @@ function init(){
   });
 
   /* Scans controls */
-  qs("#scan-refresh")?.addEventListener("click", ()=> renderScanResultsPage());
-  qs("#sr-host")?.addEventListener("change",   ()=> renderScanResultsPage());
+  const btnRefresh = qs("#scan-refresh");
+  if(btnRefresh){
+    btnRefresh.addEventListener("click", (e)=>{
+      e.preventDefault();
+      renderScanResultsPage();
+    });
+  }
+  qs("#sr-host")?.addEventListener("change", ()=> renderScanResultsPage());
+
+  // inicializar label do clear
+  updateClearButtonLabel();
+
+  /* ===== Upgrade → Pricing ===== */
+  const upgradeBtn = document.getElementById('btn-upgrade');
+  upgradeBtn?.addEventListener('click', (e)=>{
+    e.preventDefault();
+    localStorage.setItem('vulnerai.intent', 'upgrade'); // opcional
+    document.getElementById('modal-premium')?.setAttribute('aria-hidden','true');
+    window.location.href = 'pricing.html';
+  });
 }
 
-/* ====== EVENT DELEGATION: Clear Trivial CVEs ====== */
+/* ====== EVENT DELEGATION ====== */
 document.addEventListener("click", (e)=>{
   const btn = e.target.closest("#btn-clear-trivial");
   if(btn){
     e.preventDefault();
     handleClearTrivial();
+  }
+});
+// duplo-clique no botão para alternar threshold 1.0 ↔ 4.0
+document.addEventListener("dblclick", (e)=>{
+  const btn = e.target.closest("#btn-clear-trivial");
+  if(btn){
+    e.preventDefault();
+    cycleClearThreshold();
   }
 });
 
