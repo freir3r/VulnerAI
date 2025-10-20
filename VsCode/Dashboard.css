@@ -308,3 +308,154 @@ body{
 }
 
 
+/* ===================== DARK MODE (Dashboard) ===================== */
+:root{
+  /* tokens dark reutilizados */
+  --dark-bg:#0f1115;
+  --dark-ink:#e9e9ee;
+  --dark-muted:#a0a3ad;
+  --dark-border:#272a33;
+  --dark-top:#0b0d12;
+  --dark-top-text:#e9e9ee;
+  --dark-card:#131722;
+  --dark-input:#0f131b;
+}
+
+/* quando o body tiver .dark, trocamos os tokens base */
+body.dark{
+  --bg:var(--dark-bg);
+  --ink:var(--dark-ink);
+  --muted:var(--dark-muted);
+  --border:var(--dark-border);
+
+  --top:var(--dark-top);
+  --top-text:var(--dark-top-text);
+}
+
+/* plano de fundo e texto */
+body.dark{
+  background:var(--bg);
+  color:var(--ink);
+}
+
+/* Topbar */
+body.dark .topbar{ background:var(--top); color:var(--top-text); }
+body.dark .icon-btn:hover{ background:rgba(255,255,255,.06) }
+body.dark .brand-logo{
+  filter:brightness(0) invert(1) contrast(1.2);
+}
+
+/* Sidebar */
+body.dark .sidebar{
+  background:linear-gradient(180deg,#171b24 0%, #0f131b 100%);
+  color:#e7e7ea;
+}
+body.dark .sidebar-section{ color:#9aa0aa; }
+body.dark .nav-item{ color:#e7e7ea; }
+body.dark .nav-item.active{
+  background:#2a2f3a; color:#dadadd;
+}
+body.dark .btn-new{
+  background:#171c26; color:#e9e9ee; border:1px solid var(--border);
+}
+body.dark .btn-new:hover{ filter:brightness(1.06); }
+body.dark .ico{ opacity:.85 }
+
+/* Main */
+body.dark .main{ background:#0f1115; border-left:1px solid var(--border); }
+body.dark .page-header{ border-bottom:1px solid var(--border); }
+body.dark .page-header h1{ color:var(--ink); }
+
+/* Botões */
+body.dark .btn-primary{
+  background:#111419; color:#fff; border:1px solid #2a2f3a;
+}
+body.dark .btn-primary:hover{ filter:brightness(1.06); }
+body.dark .btn-secondary{
+  background:#171c26; color:var(--ink); border:1px solid var(--border);
+}
+body.dark .btn-secondary:hover{ filter:brightness(1.06); }
+body.dark .btn-secondary.danger{
+  background:#1f1414; color:#ffb3b3; outline-color:#472828; border-color:#2c1b1b;
+}
+
+/* Inputs genéricos usados no dashboard */
+body.dark .input,
+body.dark .ns-input,
+body.dark select.input,
+body.dark .input-sm{
+  background:var(--dark-input);
+  color:var(--dark-ink);
+  border:1px solid var(--dark-border);
+}
+body.dark .ns-label{ color:#d8d8de; }
+body.dark .ns-check{ color:#c9cbd3; }
+body.dark .ns-input::placeholder{ color:#8a8f99; }
+
+/* Painéis/cartas/tabelas */
+body.dark .panel{ background:#131722; border:1px solid var(--dark-border); }
+body.dark .panel-head{ border-bottom:1px solid var(--dark-border); }
+body.dark table.simple th,
+body.dark table.simple td{ border-top:1px solid var(--dark-border); color:var(--ink); }
+body.dark .res-head{ border-bottom:1px solid var(--dark-border); }
+
+/* Gauge */
+body.dark .g-track{ stroke:#2a2f3a; }
+body.dark .g-bar{ stroke:#e9e9ee; }
+body.dark .g-value{ color:#e9e9ee; }
+
+/* Estados e severidades */
+body.dark .status-open{ color:#29c459; }
+body.dark .status-filtered{ color:#e6c34a; }
+body.dark .status-closed{ color:#ff6b6b; }
+
+body.dark #sr-cves-table .sev-CRITICAL { color:#ff5a5a; }
+body.dark #sr-cves-table .sev-HIGH     { color:#ff7a6e; }
+body.dark #sr-cves-table .sev-MEDIUM   { color:#e6c34a; }
+body.dark #sr-cves-table .sev-LOW      { color:#29c459; }
+body.dark #sr-cves-table .sev-TRIVIAL  { color:#6ea8ff; }
+
+/* IP List */
+body.dark #view-iplist .muted{ color:var(--dark-muted); }
+body.dark #view-iplist .targets-empty{ color:#cfd3dc; }
+body.dark #view-iplist .badge{ background:#1a2030; border-color:#2a3244; color:#cfd3dc; }
+body.dark #view-iplist .badge.kind{ background:#172038; border-color:#223255; }
+body.dark #view-iplist .chip{ background:#1a2030; border-color:#2a3244; color:#cfd3dc; }
+body.dark #view-iplist .chip-green{ background:#14241a; border-color:#1f3a28; color:#bde6c8; }
+body.dark #view-iplist .bulk{ background:#0f141d; border-bottom:1px solid var(--dark-border); }
+
+/* New Scan CTA button arrow */
+body.dark #ns-start.btn-primary::after{
+  background:#222733; border-color:#2a2f3a; color:#e0e3ea;
+}
+
+/* Scrollbar (opcional) */
+@supports selector(::-webkit-scrollbar){
+  body.dark ::-webkit-scrollbar{ width:10px; height:10px }
+  body.dark ::-webkit-scrollbar-track{ background:#0e1219 }
+  body.dark ::-webkit-scrollbar-thumb{ background:#2a2f3a; border-radius:10px }
+  body.dark ::-webkit-scrollbar-thumb:hover{ background:#343a48 }
+}
+
+
+
+/* --- DARK MODE MINIMO --- */
+body.dark{
+  --bg:#0f1115;
+  --ink:#e9e9ee;
+  --muted:#a0a3ad;
+  --border:#272a33;
+  --top:#0b0d12;
+  --top-text:#e9e9ee;
+  background:var(--bg);
+  color:var(--ink);
+}
+body.dark .topbar{ background:var(--top); color:var(--top-text); }
+body.dark .brand-logo{ filter:brightness(0) invert(1) contrast(1.2); }
+body.dark .main{ background:#0f1115; border-left:1px solid var(--border); }
+body.dark .panel{ background:#131722; border:1px solid var(--border); }
+body.dark .btn-secondary{ background:#171c26; color:var(--ink); border:1px solid var(--border); }
+body.dark .btn-primary{ background:#111419; color:#fff; border:1px solid #2a2f3a; }
+body.dark .input, body.dark .ns-input, body.dark select.input, body.dark .input-sm{
+  background:#0f131b; color:#e9e9ee; border:1px solid #272a33;
+}
