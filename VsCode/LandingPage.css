@@ -166,6 +166,7 @@ body {
 .workflow-step.left .step-content {
   margin-left: calc(50% + 30px);
   text-align: left;
+  
 }
 
 /* Ícone à direita, texto à esquerda */
