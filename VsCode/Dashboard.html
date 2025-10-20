@@ -317,7 +317,8 @@
       </ul>
       <div class="actions">
         <button class="btn-secondary" data-close>Later</button>
-        <button class="btn-primary">Upgrade — €9.99/month</button>
+        <!-- ⇩⇩ ADICIONADO O ID AQUI ⇩⇩ -->
+        <button class="btn-primary" id="btn-upgrade">Upgrade — €9.99/month</button>
       </div>
     </div>
   </div>
@@ -330,6 +331,16 @@
         if (m) m.setAttribute('aria-hidden','true');
       }
     });
+
+  try{
+    if(!localStorage.getItem('vulnerai.auth')){
+      window.location.replace('login.html');
+    }
+  }catch(e){
+    window.location.replace('login.html');
+  }
+</script>
+
   </script>
 </body>
 </html>
