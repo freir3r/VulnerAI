@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Pricing</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="pricing.css" />
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <button id="btn-back" class="back-plain" aria-label="Back" title="Back">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M15 6l-6 6 6 6" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI">
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1 class="title">Choose your plan</h1>
+    <p class="subtitle">Upgrade to unlock scheduled scans, full reports and alerts.</p>
+
+    <!-- Monthly / Yearly -->
+    <div class="billing-switch" role="tablist" aria-label="Billing period">
+      <button id="btn-monthly" class="seg active" role="tab" aria-selected="true">Monthly</button>
+      <button id="btn-yearly" class="seg" role="tab" aria-selected="false">
+        Yearly <span class="save">save 20%</span>
+      </button>
+    </div>
+
+    <!-- CARD GRID -->
+    <section class="grid">
+      <!-- FREE -->
+      <article class="card">
+        <div class="card-head">
+          <h3 class="plan">Free</h3>
+          <span class="pill">Best for trying</span>
+        </div>
+
+        <div class="price">
+          <span class="amount">€0.00</span><span class="unit">/mo</span>
+        </div>
+
+        <ul class="features">
+          <li>Manual scans</li>
+          <li>Last 5 results</li>
+          <li>Basic dashboard</li>
+        </ul>
+
+        <div class="cta-row">
+          <button id="btn-keep-free" class="btn ghost">Keep Free</button>
+        </div>
+      </article>
+
+      <!-- PREMIUM -->
+      <article class="card featured" aria-label="Premium">
+        <div class="card-head">
+          <h3 class="plan">Premium</h3>
+          <span class="pill solid">Most popular</span>
+          <span class="pill light">Pro features</span>
+        </div>
+
+        <div class="price">
+          <span id="price-amount" class="amount">€9.99</span><span class="unit">/mo</span>
+          <div id="price-note" class="note">Billed monthly</div>
+        </div>
+
+        <ul class="features">
+          <li>⏱ Scheduled scans</li>
+          <li>📊 Full reports (PDF/CSV)</li>
+          <li>🔔 Alerts</li>
+          <li>∞ Unlimited history</li>
+        </ul>
+
+        <div class="cta-row">
+          <button id="btn-get-premium" class="btn primary">Get Premium</button>
+        </div>
+      </article>
+
+      <!-- TEAMS -->
+      <article class="card">
+        <div class="card-head">
+          <h3 class="plan">Teams</h3>
+          <span class="pill">For companies</span>
+        </div>
+
+        <ul class="features spacer">
+          <li>Multi-user workspace</li>
+          <li>SSO & role-based access</li>
+          <li>Priority support</li>
+        </ul>
+
+        <div class="cta-row">
+          <button id="btn-contact" class="btn ghost">Contact Sales</button>
+        </div>
+      </article>
+    </section>
+
+    <!-- ===== FAQ (Acordeão) ===== -->
+    <section class="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title" class="faq-title">FAQ</h2>
+
+      <div class="faq-list" role="list">
+        <!-- Item 1 -->
+        <article class="faq-item" role="listitem">
+          <button class="faq-q" aria-expanded="false" aria-controls="faq-a1" id="faq-q1">
+            Can I cancel anytime?
+            <span class="chev" aria-hidden="true"></span>
+          </button>
+          <div class="faq-a" id="faq-a1" role="region" aria-labelledby="faq-q1">
+            Yes. You can cancel your Premium subscription at any time from your account settings. Your plan
+            will remain active until the end of the paid period and you won’t be charged again.
+          </div>
+        </article>
+
+        <!-- Item 2 -->
+        <article class="faq-item" role="listitem">
+          <button class="faq-q" aria-expanded="false" aria-controls="faq-a2" id="faq-q2">
+            Do you offer invoices?
+            <span class="chev" aria-hidden="true"></span>
+          </button>
+          <div class="faq-a" id="faq-a2" role="region" aria-labelledby="faq-q2">
+            Absolutely. We email invoices for every payment and you can download past invoices as PDF from
+            the billing section. Add your company details and VAT number before checkout.
+          </div>
+        </article>
+
+        <!-- Item 3 -->
+        <article class="faq-item" role="listitem">
+          <button class="faq-q" aria-expanded="false" aria-controls="faq-a3" id="faq-q3">
+            What payment methods are supported?
+            <span class="chev" aria-hidden="true"></span>
+          </button>
+          <div class="faq-a" id="faq-a3" role="region" aria-labelledby="faq-q3">
+            We accept major credit and debit cards. For annual team plans we can support wire transfer
+            and purchase orders — contact sales for details.
+          </div>
+        </article>
+      </div>
+    </section>
+    <!-- ===== /FAQ ===== -->
+
+  </main>
+
+  <script src="pricing.js"></script>
+</body>
+</html>
