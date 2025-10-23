@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Checkout</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="checkout.css" />
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <button class="back-plain" aria-label="Back" id="btn-back">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <path d="M15 19L8 12L15 5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="checkout">
+      <!-- SUMMARY -->
+      <aside class="summary">
+        <h2>Order Summary</h2>
+        <div class="sum-row"><span class="label">Plan</span><span id="sum-plan" class="value">Premium — Monthly</span></div>
+        <div class="sum-row"><span class="label">Price</span><span id="sum-price" class="value">€9.99 / mo</span></div>
+        <div class="sum-row small" id="sum-billed">Billed monthly</div>
+        <hr />
+        <div class="sum-row"><span class="label">VAT (23%)</span><span id="sum-vat" class="value">€2.30</span></div>
+        <div class="sum-row total"><span class="label">Total today</span><span id="sum-total" class="value">€12.29</span></div>
+      </aside>
+
+      <!-- MAIN PANEL -->
+      <section class="panel">
+        <h1 class="title">Checkout</h1>
+        <p class="muted">Choose your preferred payment method.</p>
+
+        <!-- Monthly / Yearly -->
+        <div class="billing-switch">
+          <button id="btn-monthly" class="seg active">Monthly</button>
+          <button id="btn-yearly" class="seg">Yearly <span class="save">save 20%</span></button>
+        </div>
+
+        <!-- Billing details -->
+        <form id="bill-form" class="bill-form" novalidate>
+          <div class="row">
+            <div class="col">
+              <label class="lbl">Full name</label>
+              <input id="name" class="in" placeholder="John Appleseed" required />
+            </div>
+            <div class="col">
+              <label class="lbl">Email</label>
+              <input id="email" type="email" class="in" placeholder="you@email.com" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col">
+              <label class="lbl">Country</label>
+              <select id="country" class="in">
+                <option>Portugal</option><option>Spain</option><option>France</option>
+                <option>Germany</option><option>United States</option>
+              </select>
+            </div>
+            <div class="col">
+              <label class="lbl">VAT number (optional)</label>
+              <input id="vat" class="in" placeholder="PT123456789" />
+            </div>
+          </div>
+
+          <!-- Payment -->
+          <section class="pay">
+            <h2 class="section-title">Payment</h2>
+
+            <!-- Methods -->
+            <div class="pay-methods">
+              <h3 class="pm-title">Payment methods</h3>
+
+              <label class="pm-item active">
+                <input type="radio" name="pm" value="card" checked />
+                <span class="pm-face">
+                  <img src="../Resources/CheckOut/Visa-Mastercard-1-1024x378.png" alt="Visa & Mastercard" />
+                  <span>Credit / Debit Card</span>
+                </span>
+              </label>
+
+              <label class="pm-item">
+                <input type="radio" name="pm" value="apple" />
+                <span class="pm-face">
+                  <img src="../Resources/CheckOut/Apple-Pay-logo.png" alt="Apple Pay" />
+                  <span>Apple Pay</span>
+                </span>
+              </label>
+
+              <label class="pm-item">
+                <input type="radio" name="pm" value="google" />
+                <span class="pm-face">
+                  <img src="../Resources/CheckOut/googlepay.png" alt="Google Pay" />
+                  <span>Google Pay</span>
+                </span>
+              </label>
+
+              <label class="pm-item">
+                <input type="radio" name="pm" value="paypal" />
+                <span class="pm-face">
+                  <img src="../Resources/CheckOut/PayPal.svg.png" alt="PayPal" />
+                  <span>PayPal</span>
+                </span>
+              </label>
+            </div>
+
+            <!-- Panels per method -->
+            <div class="pm-panels">
+              <!-- CARD -->
+              <div class="panel" data-method="card">
+                <div class="grid2">
+                  <label class="fld">
+                    <span class="lbl">Cardholder name</span>
+                    <input id="cc-name" class="inp" placeholder="Full name on card" autocomplete="cc-name" />
+                  </label>
+                  <label class="fld">
+                    <span class="lbl">Card number</span>
+                    <input id="cc-number" class="inp mono" placeholder="4242 4242 4242 4242" inputmode="numeric" autocomplete="cc-number" />
+                  </label>
+                  <label class="fld">
+                    <span class="lbl">Expiry</span>
+                    <input id="cc-exp" class="inp mono" placeholder="MM/YY" inputmode="numeric" autocomplete="cc-exp" />
+                  </label>
+                  <label class="fld">
+                    <span class="lbl">CVC</span>
+                    <input id="cc-cvc" class="inp mono" placeholder="CVC" inputmode="numeric" autocomplete="cc-csc" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- APPLE PAY -->
+              <div class="panel hidden" data-method="apple">
+                <p class="muted">Use your Apple Wallet to complete the purchase.</p>
+                <button class="btn applepay" type="button">Pay with Apple Pay</button>
+                <p class="micro muted">Available on supported devices and browsers.</p>
+              </div>
+
+              <!-- GOOGLE PAY -->
+              <div class="panel hidden" data-method="google">
+                <p class="muted">Use your Google Wallet to complete the purchase.</p>
+                <button class="btn gpay" type="button">Pay with Google Pay</button>
+                <p class="micro muted">Available on supported devices and browsers.</p>
+              </div>
+
+              <!-- PAYPAL -->
+              <div class="panel hidden" data-method="paypal">
+                <p class="muted">You’ll be redirected to PayPal to authorize the payment, then back here.</p>
+                <button class="btn paypal" type="button">Continue with PayPal</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Terms -->
+          <label class="chk">
+            <input id="agree" type="checkbox">
+            <span>I agree to the <a href="#" data-doc="terms">Terms</a> and <a href="#" data-doc="privacy">Privacy Policy</a>.</span>
+          </label>
+
+          <!-- Actions -->
+          <div class="actions">
+            <button id="btn-pay" type="submit" class="btn primary">Pay now</button>
+            <button id="btn-cancel" type="button" class="btn ghost">Cancel</button>
+          </div>
+        </form>
+
+        <p class="secure">🔒 Payments are processed securely.</p>
+      </section>
+    </section>
+  </main>
+
+  <!-- LEGAL MODAL -->
+  <div id="legal-modal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h3 id="legal-title">Document</h3>
+        <button class="modal-close" data-close>×</button>
+      </div>
+      <div class="modal-body" id="legal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Payment submitted (demo)</div>
+
+  <script src="checkout.js"></script>
+</body>
+</html>

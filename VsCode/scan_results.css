@@ -1,0 +1,64 @@
+/* General body styles (match Dashboard.css) */
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  padding: 20px; /* Add some padding around the content */
+}
+
+h1 {
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  border: 1px solid var(--border); /* Use the border variable */
+  border-radius: var(--radius); /* Use the radius variable */
+  box-shadow: var(--shadow); /* Use the shadow variable */
+  background-color: #fff; /* Ensure a white background */
+}
+
+th,
+td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border); /* Use the border variable */
+}
+
+th {
+  background-color: #f9f9f9;
+  font-weight: 600;
+}
+
+/* Remove the last border */
+table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Button style (consistent with Dashboard.css) */
+#export-pdf-btn {
+  background: #111;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: filter 0.2s; /* Smooth hover effect */
+}
+
+#export-pdf-btn:hover {
+  filter: brightness(0.96);
+}
+
+/* Add some spacing and center the button */
+#export-pdf-btn {
+  display: inline-block;
+  margin-bottom: 20px;
+}
