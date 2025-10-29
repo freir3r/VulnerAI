@@ -11,11 +11,10 @@
 <main class="card" aria-labelledby="login-title">
   <div class="brand" role="img" aria-label="VulnerAI">
     <img class="logo" src="VulnerAI Logo.png" alt="Logótipo VulnerAI"
-        onclick="window.location.href='LandingPage.html'" />
+      onclick="window.location.href='LandingPage.html'" />
   </div>
 
   <form id="loginForm" autocomplete="on" novalidate>
-    <!-- EMAIL -->
     <div class="field">
       <label for="email">Email</label>
       <div class="control">
@@ -24,7 +23,6 @@
       </div>
     </div>
 
-    <!-- PASSWORD -->
     <div class="field">
       <label for="password">Password</label>
       <div class="control">
@@ -43,7 +41,6 @@
       </div>
     </div>
 
-    <!-- AÇÕES -->
     <div class="actions">
       <button class="btn-login" type="submit">Login</button>
       <button type="button" class="forgot" id="forgotBtn">Esqueceu-se da password?</button>
@@ -51,7 +48,6 @@
   </form>
 </main>
 
-<!-- MODAL DE RECUPERAÇÃO -->
 <div class="overlay" id="overlay" aria-hidden="true">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <h3 id="modalTitle">Recuperar password</h3>
@@ -66,8 +62,12 @@
 </div>
 
 <script>
-  // ====== Password eye toggle ======
+  // Variáveis para serem usadas em todo o script
   const pwd = document.getElementById('password');
+  const emailInput = document.getElementById('email');
+  const overlay = document.getElementById('overlay');
+  
+  // ====== Password eye toggle ======
   const toggle = document.getElementById('togglePassword');
   const eyeOpen = document.getElementById('eyeOpen');
   const eyeClosed = document.getElementById('eyeClosed');
@@ -89,7 +89,6 @@
   });
 
   // ====== Clear email ======
-  const emailInput = document.getElementById('email');
   const clearEmail = document.getElementById('clearEmail');
   function toggleClearBtn() { clearEmail.style.display = emailInput.value ? 'block' : 'none'; }
   emailInput.addEventListener('input', toggleClearBtn);
@@ -97,40 +96,22 @@
   toggleClearBtn();
 
   // ====== Forgot modal ======
-  const overlay = document.getElementById('overlay');
   const forgotBtn = document.getElementById('forgotBtn');
   const cancelForgot = document.getElementById('cancelForgot');
-  const sendForgot = document.getElementById('sendForgot');
   const forgotEmail = document.getElementById('forgotEmail');
   const forgotError = document.getElementById('forgotError');
+  // Nota: A variável 'sendForgot' (botão Enviar) é usada no Login.js
 
   function openModal() { overlay.classList.add('open'); forgotEmail.value = ''; forgotError.style.display = 'none'; }
   function closeModal() { overlay.classList.remove('open'); }
   forgotBtn.addEventListener('click', openModal);
   cancelForgot.addEventListener('click', closeModal);
+  // Fechar o modal ao clicar no fundo (overlay)
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
-  function validEmail(e) { return /\S+@\S+\.\S+/.test(e); }
-  sendForgot.addEventListener('click', () => {
-    if (!validEmail(forgotEmail.value.trim())) { forgotError.style.display = 'block'; return; }
-    alert('Se o email existir no sistema, receberá instruções para repor a password.');
-    closeModal();
-  });
-
-  // ====== Auth + redirect to dashboard ======
-  const form = document.getElementById('loginForm');
-  const AUTH_KEY = 'vulnerai.auth';
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const email = emailInput.value.trim();
-
-    if (!validEmail(email)) { alert('Por favor introduza um email válido.'); return; }
-    if (pwd.value.length < 6) { alert('Password demasiado curta.'); return; }
-
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ email, ts: Date.now() }));
-    window.location.href = 'dashboard.html';
-  });
+  // Expor a função closeModal para o Login.js usar, se necessário.
+  window.closeModal = closeModal; 
 </script>
+<script type="module" src="Login.js"></script>
 </body>
 </html>
