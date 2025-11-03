@@ -19,7 +19,8 @@
 }
 
 html, body {
-  height: 100%;
+  height: auto;
+  overflow: auto;
 }
 
 /* ====== FUNDO ====== */
@@ -73,8 +74,7 @@ body {
 }
 
 .logo {
-  width: 68%;
-  max-width: 280px;
+  width: 80%;
   height: auto;
   display: block;
   margin-top: 10px;
