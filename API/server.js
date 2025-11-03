@@ -85,40 +85,53 @@ function safeFirestoreUpdate(docRef, data) {
 
 // --- Nmap Scan Presets ---
 const PRESETS = {
-  quick: {
-    args: [
-      '-sT', '-sV', '--version-intensity', '5', '--version-all',
-      '-sC',
-      '--script', 'vuln,http-enum,http-security-headers,http-title,ssh2-enum-algos,ftp-anon,banner,ssl-cert,ssl-enum-ciphers',
-      '-p', '80,443,8080,8443,21,22,23,25,53,110,143,993,995,3306,3389,5432,27017',
-      '-T5', '--max-retries', '1', '--host-timeout', '180s', '--script-timeout', '30s',
-      '--open','--reason', '-oX', '-'
-    ],
-    outputFormat: 'xml',
-    timeoutMs: 5 * 60 * 1000,
-    description: 'Quick security check on common services (improved version & banner capture)'
-  },
-  deep: {
-    args: [
-      '-sT', '-sV', '-sC', '-A',
-      '--script', 'vuln,http-enum,http-security-headers,http-title,ssh2-enum-algos,ftp-anon,banner,ssl-cert,ssl-enum-ciphers',
-      '-p-', '-T4', '--min-rate', '100', '--max-retries', '1',
-      '--host-timeout', '45m', '--script-timeout', '2m',
-      '--open', '--reason', '-oX', '-'
-    ],
-    outputFormat: 'xml',
-    timeoutMs: 180 * 60 * 1000,
-    description: 'Comprehensive security assessment of all ports'
-  },
-  network_discovery: {
-    args: [
-      '-sn',
-      '-T5', '--max-retries', '1', '--host-timeout', '30s',
+  // Option 1: Network Discovery & Quick Port Scan
+  network_scan: {
+    args: [                     
+      '-sn',                         
+      '-T3',                     
       '-oX', '-'
     ],
     outputFormat: 'xml',
-    timeoutMs: 120 * 1000,
-    description: 'Network discovery - find active devices'
+    timeoutMs: 10 * 60 * 1000,
+    description: 'Network discovery followed by quick port scan on common ports',
+    category: 'network_discovery',
+    intensity: 'quick'
+  },
+
+  // Option 2: Deep Single Target Scan
+  deep_scan: {
+    args: [
+      '-sT', '-sV', '--version-intensity', '7',
+      '--script', 'default,safe,banner',
+      '-p-', // All ports
+      '-T4', '--min-rate', '500',
+      '--max-retries', '2',
+      '--host-timeout', '15m',
+      '--open', '--reason', '-oX', '-'
+    ],
+    outputFormat: 'xml',
+    timeoutMs: 20 * 60 * 1000, // 20 minutes max
+    description: 'Comprehensive single target scan with service detection and basic scripts',
+    category: 'deep_scan',
+    intensity: 'comprehensive'
+  },
+
+  // Option 3: CVE Analysis (uses existing scan data)
+  cve_analysis: {
+    args: [
+      '-sT', '-sV', '--version-intensity', '9',
+      '--script', 'vuln,vulners',
+      '-p', '--version-all', // Only scan ports that were previously found open
+      '-T3', '--max-retries', '2',
+      '--host-timeout', '10m', '--script-timeout', '1m',
+      '--open', '--reason', '-oX', '-'
+    ],
+    outputFormat: 'xml',
+    timeoutMs: 15 * 60 * 1000, // 15 minutes max
+    description: 'CVE vulnerability analysis based on previous scan results',
+    category: 'cve_analysis',
+    intensity: 'targeted'
   }
 };
 
@@ -248,6 +261,7 @@ function runNmap(args, target, timeoutMs, scanId) {
 }
 
 // Enhanced XML parser with user-friendly results
+// Enhanced XML parser with user-friendly results
 async function parseNetworkScanXml(xmlText, targetNetwork) {
   try {
     if (!xmlText || typeof xmlText !== 'string' || xmlText.trim() === '') {
@@ -266,9 +280,7 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
       };
     }
 
-    // Quick sanity log: first 2 lines
-    console.log('parseNetworkScanXml: raw xml preview:\n', xmlText.split('\n').slice(0, 6).join('\n'));
-
+    // Enhanced XML parsing options - FIXED for your XML structure
     const result = await xml2js.parseStringPromise(xmlText, {
       explicitArray: false,
       mergeAttrs: true,
@@ -276,41 +288,47 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
       trim: true
     });
 
-    if (!result || !result.nmaprun) {
-      console.warn('parseNetworkScanXml: parsed XML does not contain nmaprun root. Keys:', Object.keys(result || {}));
-      return {
-        network: targetNetwork,
-        hosts: [],
-        totalHosts: 0,
-        activeHosts: 0,
-        openPortsTotal: 0,
-        vulnerabilitiesTotal: 0,
-        overall_security_rating: 'UNKNOWN',
-        key_findings: ['Unexpected XML structure'],
-        executive_summary: 'Parsed XML does not contain expected nmaprun root',
-        parse_error: 'missing nmaprun root'
-      };
+    console.log('XML Parse Result Root Keys:', Object.keys(result || {}));
+
+    // Handle the case where nmaprun attributes are at root level
+    let hosts = [];
+    let nmaprunData = result;
+
+    // If there's a nested nmaprun, use that, otherwise use root as nmaprun
+    if (result.nmaprun) {
+      nmaprunData = result.nmaprun;
+      console.log('Using nested nmaprun structure');
+    } else {
+      console.log('Using root as nmaprun structure');
     }
 
-    console.log('XML Parse Result Structure:', Object.keys(result.nmaprun || {}));
+    console.log('nmaprunData Keys:', Object.keys(nmaprunData || {}));
 
-    let hosts = [];
-    if (result.nmaprun.host) {
-      hosts = Array.isArray(result.nmaprun.host)
-        ? result.nmaprun.host
-        : [result.nmaprun.host];
+    // Extract hosts from the correct location
+    if (nmaprunData.host) {
+      hosts = Array.isArray(nmaprunData.host)
+        ? nmaprunData.host
+        : [nmaprunData.host];
     }
 
     console.log(`Found ${hosts.length} hosts in XML`);
 
-    const scanResults = [];
+    // Debug: Log first host structure to understand the data
+    if (hosts.length > 0) {
+      console.log('First host structure:', JSON.stringify(hosts[0], null, 2).substring(0, 1000));
+    }
+
+    const ScanResults = [];
 
     for (const hostObj of hosts) {
-      // defensive checks and logging
       if (!hostObj) {
         console.warn('Skipping empty host object in parsed XML');
         continue;
       }
+
+      // Enhanced hostname extraction with comprehensive debugging
+      const hostname = extractHostnameEnhanced(hostObj);
+
       // Get host information with safe defaults
       const addresses = Array.isArray(hostObj.address) ? hostObj.address : (hostObj.address ? [hostObj.address] : []);
       const ipv4 = addresses.find(addr => addr.addrtype === 'ipv4')?.addr ||
@@ -326,30 +344,21 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
         addresses.find(addr => typeof addr === 'object' && addr.addrtype === 'mac')?.vendor ||
         '';
 
-      // Get hostname with safe defaults
-      let hostname = '';
-      if (hostObj.hostnames) {
-        const hostnames = Array.isArray(hostObj.hostnames.hostname)
-          ? hostObj.hostnames.hostname
-          : (hostObj.hostnames.hostname ? [hostObj.hostnames.hostname] : []);
-        hostname = hostnames.length > 0 ? (hostnames[0].name || '') : '';
-      }
-
-      // Get host status - this is critical for detecting active hosts
+      // Get host status
       let hostStatus = 'unknown';
       if (hostObj.status) {
         hostStatus = hostObj.status.state || 'unknown';
       }
 
-      // Parse ports and services with safe defaults
+      // Debug logging for host information
+      console.log(`Host ${ipv4} - hostname: "${hostname}", status: ${hostStatus}, addresses: ${addresses.length}`);
+
+      // Parse ports and services
       let portsArr = [];
       if (hostObj.ports && hostObj.ports.port) {
         portsArr = Array.isArray(hostObj.ports.port)
           ? hostObj.ports.port
           : [hostObj.ports.port];
-      } else {
-        // sometimes state info is in hostObj['hostscript'] or no ports
-        portsArr = [];
       }
 
       const detectedPorts = portsArr.map(p => {
@@ -357,24 +366,19 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
         const state = p.state || {};
         const scripts = p.script ? (Array.isArray(p.script) ? p.script : [p.script]) : [];
 
-        // pick small useful script preview if available
+        // Service detection
         const firstScriptOutput = scripts.length > 0 ? (scripts[0].output || '').split('\n')[0].trim() : '';
-
-        // prefer explicit product, then extrainfo, then banner, then first script output
         const productCandidate = service.product || service.extrainfo || service.banner || firstScriptOutput || '';
-
-        // build concise banner fallback
         const bannerCandidate = (service.banner && service.banner.trim()) ? service.banner.trim() : (firstScriptOutput ? firstScriptOutput.slice(0, 200) : '');
 
+        // Basic script parsing
         const parsedScripts = scripts.map(s => ({
           id: s.id || 'unknown',
           name: s.id ? s.id.replace(/-/g, ' ').toUpperCase() : 'Unknown Script',
           output: s.output || '',
-          risk_level: determineScriptRisk(s.id, s.output),
-          description: getScriptDescription(s.id)
+          risk_level: 'unknown',
+          description: ''
         }));
-
-        const serviceCategory = categorizeService(service.name || productCandidate, p.portid);
 
         return {
           port: p.portid || '',
@@ -390,24 +394,25 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
             method: service.method || 'table',
             banner: bannerCandidate
           },
-          category: serviceCategory,
-          risk_level: assessPortRisk(p.portid, service.name || productCandidate, state.state),
+          category: 'Unknown',
+          risk_level: 'unknown',
           scripts: parsedScripts,
           banner: bannerCandidate,
-          summary: generatePortSummary(p.portid, service.name || productCandidate, state.state, productCandidate, service.version)
+          summary: `Port ${p.portid} ${state.state}`
         };
       });
 
-      // Enhanced vulnerability detection (same logic)
+      // Basic vulnerability detection
       let foundVulns = [];
       for (const p of portsArr) {
         if (p.script) {
           const scripts = Array.isArray(p.script) ? p.script : [p.script];
           for (const s of scripts) {
-            const vulnInfo = extractVulnerabilityInfo(s, p.portid, p.service);
-            if (vulnInfo) {
+            // Placeholder - implement your vulnerability extraction logic
+            if (s.id && s.id.includes('vuln')) {
               foundVulns.push({
-                ...vulnInfo,
+                title: `Potential vulnerability in ${s.id}`,
+                severity: 'unknown',
                 host: ipv4,
                 port: p.portid,
                 service: p.service?.name || 'unknown'
@@ -419,7 +424,7 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
 
       const openPorts = detectedPorts.filter(p => p.state === 'open').length;
 
-      scanResults.push({
+      ScanResults.push({
         host: ipv4,
         hostname: hostname,
         mac_address: mac,
@@ -428,27 +433,22 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
         ports: detectedPorts,
         open_ports_count: openPorts,
         foundVulns: foundVulns,
-        security_assessment: assessHostSecurity(detectedPorts, foundVulns),
-        device_type: inferDeviceType(detectedPorts, vendor),
-        recommendations: generateHostRecommendations(detectedPorts, foundVulns),
         scan_timestamp: new Date().toISOString()
       });
     }
 
-    const activeHosts = scanResults.filter(host => host.status === 'up' || host.open_ports_count > 0);
+    const activeHosts = ScanResults.filter(host => host.status === 'up' || host.open_ports_count > 0);
 
-    console.log(`Final Results - Total Hosts: ${scanResults.length}, Active Hosts: ${activeHosts.length}`);
+    console.log(`Final Results - Total Hosts: ${ScanResults.length}, Active Hosts: ${activeHosts.length}`);
+    console.log(`Hostnames found:`, ScanResults.map(h => `${h.host}: "${h.hostname}"`));
 
     return {
       network: targetNetwork,
-      hosts: scanResults,
-      totalHosts: scanResults.length,
+      hosts: ScanResults,
+      totalHosts: ScanResults.length,
       activeHosts: activeHosts.length,
-      openPortsTotal: scanResults.reduce((sum, host) => sum + host.open_ports_count, 0),
-      vulnerabilitiesTotal: scanResults.reduce((sum, host) => sum + host.foundVulns.length, 0),
-      overall_security_rating: calculateOverallSecurityRating(scanResults),
-      key_findings: generateKeyFindings(scanResults),
-      executive_summary: generateExecutiveSummary(scanResults),
+      openPortsTotal: ScanResults.reduce((sum, host) => sum + host.open_ports_count, 0),
+      vulnerabilitiesTotal: ScanResults.reduce((sum, host) => sum + host.foundVulns.length, 0),
       timestamp: new Date().toISOString()
     };
   } catch (error) {
@@ -468,339 +468,371 @@ async function parseNetworkScanXml(xmlText, targetNetwork) {
   }
 }
 
-// --- User-Friendly Helper Functions ---
+// Enhanced hostname extraction function
+function extractHostnameEnhanced(hostObj) {
+  if (!hostObj) return '';
 
-function categorizeService(serviceName, port) {
-  const portNum = parseInt(port);
-  const service = (serviceName || '').toLowerCase();
+  console.log('Extracting hostname from:', JSON.stringify(hostObj.hostnames, null, 2).substring(0, 500));
 
-  if (service.includes('http') || service.includes('apache') || service.includes('nginx') || portNum === 80 || portNum === 443 || portNum === 8080 || portNum === 8443) {
-    return 'Web Service';
-  } else if (service.includes('ssh') || portNum === 22) {
-    return 'Remote Access';
-  } else if (service.includes('ftp') || portNum === 21) {
-    return 'File Transfer';
-  } else if (service.includes('smtp') || portNum === 25) {
-    return 'Email Service';
-  } else if (service.includes('mysql') || service.includes('postgresql') || portNum === 3306 || portNum === 5432) {
-    return 'Database';
-  } else if (service.includes('rdp') || portNum === 3389) {
-    return 'Remote Desktop';
-  } else if (service.includes('dns') || portNum === 53) {
-    return 'DNS Service';
-  } else if (service.includes('telnet') || portNum === 23) {
-    return 'Remote Management';
-  } else {
-    return 'Other Service';
-  }
-}
+  const strategies = [
+    // Strategy 1: hostnames.hostname array with attributes
+    () => {
+      if (hostObj.hostnames?.hostname) {
+        const hostnames = Array.isArray(hostObj.hostnames.hostname)
+          ? hostObj.hostnames.hostname
+          : [hostObj.hostnames.hostname];
 
-function assessPortRisk(port, service, state) {
-  if (state !== 'open') return 'None';
+        if (hostnames.length > 0) {
+          const first = hostnames[0];
+          return first.name || first.$?.name || first._ || first || '';
+        }
+      }
+      return '';
+    },
+    // Strategy 2: Direct hostname field
+    () => hostObj.hostname?.name || hostObj.hostname?.$?.name || hostObj.hostname?._ || hostObj.hostname || '',
+    // Strategy 3: From addresses with hostname type
+    () => {
+      const addresses = Array.isArray(hostObj.address) ? hostObj.address : (hostObj.address ? [hostObj.address] : []);
+      const hostnameAddr = addresses.find(addr => addr.addrtype === 'hostname' || addr.type === 'hostname');
+      return hostnameAddr?.addr || hostnameAddr?._ || '';
+    },
+    // Strategy 4: Check for any string in hostnames
+    () => {
+      if (typeof hostObj.hostnames === 'string') return hostObj.hostnames;
+      return '';
+    }
+  ];
 
-  const portNum = parseInt(port);
-  const highRiskPorts = [21, 23, 135, 139, 445, 1433, 1434, 3306, 3389, 5432, 5900, 6379];
-  const mediumRiskPorts = [22, 25, 53, 110, 111, 993, 995, 1723, 8080, 8443];
-
-  if (highRiskPorts.includes(portNum)) return 'High';
-  if (mediumRiskPorts.includes(portNum)) return 'Medium';
-
-  // Service-specific risks
-  if (service && (
-    service.includes('ftp') && !service.includes('sftp') ||
-    service.includes('telnet') ||
-    service.includes('vnc') ||
-    service.includes('microsoft-ds')
-  )) {
-    return 'High';
-  }
-
-  return 'Low';
-}
-
-function determineScriptRisk(scriptId, output) {
-  if (!scriptId) return 'Unknown';
-
-  const script = scriptId.toLowerCase();
-  const out = (output || '').toLowerCase();
-
-  const highRiskIndicators = ['vuln', 'exploit', 'vulnerable', 'cve-', 'critical', 'high'];
-  const medRiskIndicators = ['warning', 'medium', 'information', 'disclosure'];
-
-  if (highRiskIndicators.some(indicator => script.includes(indicator) || out.includes(indicator))) {
-    return 'High';
-  }
-  if (medRiskIndicators.some(indicator => script.includes(indicator) || out.includes(indicator))) {
-    return 'Medium';
-  }
-
-  return 'Low';
-}
-
-function getScriptDescription(scriptId) {
-  const descriptions = {
-    'http-enum': 'Discovers common web directories and files',
-    'http-security-headers': 'Checks for important security headers',
-    'http-title': 'Gets the title of web pages',
-    'ssh2-enum-algos': 'Lists supported SSH encryption algorithms',
-    'ftp-anon': 'Checks if FTP server allows anonymous login',
-    'vuln': 'Checks for known vulnerabilities',
-    'banner': 'Grabs service banners for identification'
-  };
-
-  return descriptions[scriptId] || `Security check: ${scriptId}`;
-}
-
-function generatePortSummary(port, service, state, product, version) {
-  if (state !== 'open') return `Port ${port} is closed`;
-
-  const serviceName = service || 'unknown service';
-  const productInfo = product ? ` running ${product}${version ? ' ' + version : ''}` : '';
-
-  return `Port ${port} (${serviceName}) is open${productInfo}. This allows ${serviceName} connections.`;
-}
-
-function extractVulnerabilityInfo(script, port, service) {
-  const output = script.output || '';
-  const scriptId = script.id || '';
-
-  // Look for CVEs (return all matches)
-  const cveMatches = (output.match(/CVE-\d{4}-\d{4,7}/g) || []).map(m => m.trim());
-
-  // Look for vulnerability indicators
-  const isVulnerable = output.toLowerCase().includes('vulnerable') ||
-    output.toLowerCase().includes('vulnerability') ||
-    output.toLowerCase().includes('exploit') ||
-    output.toLowerCase().includes('risk');
-
-  if (cveMatches.length > 0 || isVulnerable) {
-    const severity = determineVulnerabilitySeverity(output, scriptId);
-
-    return {
-      CVEs: cveMatches.length > 0 ? cveMatches : ['N/A'],
-      severity: severity,
-      title: generateVulnerabilityTitle(scriptId, output, port, service),
-      description: generateVulnerabilityDescription(scriptId, output),
-      evidence: {
-        script_id: scriptId,
-        script_name: getScriptDescription(scriptId),
-        output: output.substring(0, 1000), // limit length
-        port: port
-      },
-      risk_level: severity,
-      recommendation: generateVulnerabilityRecommendation(scriptId, port, service),
-      external_links: cveMatches.length > 0 ? cveMatches.map(c => [
-        `https://cve.mitre.org/cgi-bin/cvename.cgi?name=${c}`,
-        `https://nvd.nist.gov/vuln/detail/${c}`
-      ]).flat() : []
-    };
-  }
-
-  return null;
-}
-
-function determineVulnerabilitySeverity(output, scriptId) {
-  const out = output.toLowerCase();
-
-  if (out.includes('critical') || out.includes('high') || scriptId.includes('vuln')) {
-    return 'High';
-  } else if (out.includes('medium')) {
-    return 'Medium';
-  } else if (out.includes('low')) {
-    return 'Low';
-  }
-
-  return 'Unknown';
-}
-
-function generateVulnerabilityTitle(scriptId, output, port, service) {
-  const serviceName = service?.name || 'service';
-
-  if (scriptId === 'http-security-headers') {
-    return `Missing Security Headers on Web Service (Port ${port})`;
-  } else if (scriptId === 'ftp-anon' && output.includes('Anonymous FTP login allowed')) {
-    return `Anonymous FTP Access Allowed (Port ${port})`;
-  } else if (output.includes('CVE')) {
-    const cveMatch = output.match(/CVE-\d{4}-\d{4,7}/);
-    return `Known Vulnerability (${cveMatch ? cveMatch[0] : 'CVE'}) in ${serviceName}`;
-  }
-
-  return `Security Issue Detected in ${serviceName} (Port ${port})`;
-}
-
-function generateVulnerabilityDescription(scriptId, output) {
-  if (scriptId === 'http-security-headers') {
-    return 'The web service is missing important security headers that help protect against common web attacks.';
-  } else if (scriptId === 'ftp-anon' && output.includes('Anonymous FTP login allowed')) {
-    return 'The FTP server allows anonymous access, which could allow unauthorized file access.';
-  } else if (output.includes('CVE')) {
-    return 'A known security vulnerability was detected that could potentially be exploited.';
-  }
-
-  return 'A potential security issue was identified during the scan.';
-}
-
-function generateVulnerabilityRecommendation(scriptId, port, service) {
-  const serviceName = service?.name || 'the service';
-
-  if (scriptId === 'http-security-headers') {
-    return 'Configure security headers like Content-Security-Policy, X-Content-Type-Options, and Strict-Transport-Security.';
-  } else if (scriptId === 'ftp-anon') {
-    return 'Disable anonymous FTP access or restrict it to read-only with no write permissions.';
-  } else if (service?.version) {
-    return `Update ${serviceName} to the latest version to address known security issues.`;
-  }
-
-  return `Review the configuration of ${serviceName} on port ${port} and apply security best practices.`;
-}
-
-function assessHostSecurity(ports, vulnerabilities) {
-  const openPorts = ports.filter(p => p.state === 'open');
-  const highRiskPorts = openPorts.filter(p => p.risk_level === 'High');
-  const highRiskVulns = vulnerabilities.filter(v => v.severity === 'High');
-
-  if (highRiskVulns.length > 0 || highRiskPorts.length > 3) {
-    return 'High Risk';
-  } else if (vulnerabilities.length > 0 || highRiskPorts.length > 0) {
-    return 'Medium Risk';
-  } else if (openPorts.length > 0) {
-    return 'Low Risk';
-  } else {
-    return 'No Open Services';
-  }
-}
-
-function inferDeviceType(ports, vendor) {
-  const openPorts = ports.filter(p => p.state === 'open');
-  const portNumbers = openPorts.map(p => parseInt(p.port));
-
-  // Check for common device patterns
-  if (portNumbers.includes(80) || portNumbers.includes(443) || portNumbers.includes(8080)) {
-    return 'Web Server';
-  } else if (portNumbers.includes(22) && vendor && (vendor.includes('Cisco') || vendor.includes('Juniper'))) {
-    return 'Network Device';
-  } else if (portNumbers.includes(135) && portNumbers.includes(445)) {
-    return 'Windows Computer';
-  } else if (portNumbers.includes(22) && portNumbers.includes(25)) {
-    return 'Linux Server';
-  } else if (vendor && vendor.includes('Apple')) {
-    return 'Apple Device';
-  }
-
-  return 'Network Device';
-}
-
-function generateHostRecommendations(ports, vulnerabilities) {
-  const recommendations = [];
-  const openPorts = ports.filter(p => p.state === 'open');
-
-  // Check for unnecessary open ports
-  const unnecessaryPorts = openPorts.filter(p =>
-    [21, 23, 135, 139, 445].includes(parseInt(p.port)) && p.risk_level === 'High'
-  );
-
-  if (unnecessaryPorts.length > 0) {
-    recommendations.push(`Consider closing unnecessary high-risk ports: ${unnecessaryPorts.map(p => p.port).join(', ')}`);
-  }
-
-  // Check for vulnerabilities
-  if (vulnerabilities.length > 0) {
-    const highVulns = vulnerabilities.filter(v => v.severity === 'High');
-    if (highVulns.length > 0) {
-      recommendations.push(`Address ${highVulns.length} high-severity security vulnerabilities immediately`);
+  for (const strategy of strategies) {
+    try {
+      const result = strategy();
+      if (result && typeof result === 'string' && result.trim() && result !== 'unknown') {
+        console.log(`Found hostname using strategy: ${result}`);
+        return result.trim();
+      }
+    } catch (e) {
+      console.warn('Hostname extraction strategy failed:', e.message);
     }
   }
 
-  // General recommendations
-  if (openPorts.length > 10) {
-    recommendations.push('Reduce the number of open ports to minimize attack surface');
-  }
-
-  if (recommendations.length === 0) {
-    recommendations.push('Current configuration appears reasonable. Maintain regular security updates.');
-  }
-
-  return recommendations;
+  console.log('No hostname found using any strategy');
+  return '';
 }
 
-function calculateOverallSecurityRating(scanResults) {
-  const activeHosts = scanResults.filter(h => h.status === 'up');
-  if (activeHosts.length === 0) return 'No Active Hosts';
+// --- NEW Helper Functions for Simplified Presets ---
 
-  let highRiskCount = 0;
-  let mediumRiskCount = 0;
+// Network Discovery with Sequential Port Scanning
+async function runNetworkDiscoveryScan(target, scanId) {
+  console.log(`[${scanId}] Starting network discovery for: ${target}`);
 
-  activeHosts.forEach(host => {
-    const assessment = host.security_assessment;
-    if (assessment === 'High Risk') highRiskCount++;
-    else if (assessment === 'Medium Risk') mediumRiskCount++;
-  });
-
-  const highRiskPercentage = (highRiskCount / activeHosts.length) * 100;
-  const mediumRiskPercentage = (mediumRiskCount / activeHosts.length) * 100;
-
-  if (highRiskPercentage > 30) return 'High Risk';
-  if (mediumRiskPercentage > 50 || highRiskPercentage > 10) return 'Medium Risk';
-  if (mediumRiskPercentage > 20) return 'Low Risk';
-
-  return 'Good';
-}
-
-function generateKeyFindings(scanResults) {
-  const findings = [];
-  const activeHosts = scanResults.filter(h => h.status === 'up');
-
-  if (activeHosts.length === 0) {
-    return ['No active hosts found on the network'];
-  }
-
-  // Count vulnerabilities
-  const totalVulns = scanResults.reduce((sum, host) => sum + host.foundVulns.length, 0);
-  const highRiskVulns = scanResults.reduce((sum, host) =>
-    sum + host.foundVulns.filter(v => v.severity === 'High').length, 0
+  // Step 1: Host discovery
+  const discoveryResult = await runNmap(
+    PRESETS.network_scan.args,
+    target,
+    PRESETS.network_scan.timeoutMs,
+    `${scanId}-discovery`
   );
 
-  if (highRiskVulns > 0) {
-    findings.push(`${highRiskVulns} high-severity security vulnerabilities detected`);
+  // Parse discovery results to get active hosts with their hostnames
+  const discoveryData = await xml2js.parseStringPromise(discoveryResult.stdout);
+  let hosts = [];
+
+  if (discoveryData.nmaprun && discoveryData.nmaprun.host) {
+    hosts = Array.isArray(discoveryData.nmaprun.host)
+      ? discoveryData.nmaprun.host
+      : [discoveryData.nmaprun.host];
   }
 
-  if (totalVulns > 0) {
-    findings.push(`${totalVulns} total security issues found across ${activeHosts.length} devices`);
+  // Enhanced hostname extraction function
+  const extractHostname = extractHostnameEnhanced;
+
+  // Store host information including hostnames from discovery
+  const activeHosts = hosts.filter(host =>
+    host.status && host.status.state === 'up'
+  ).map(host => {
+    const addresses = Array.isArray(host.address) ? host.address : (host.address ? [host.address] : []);
+    const ipv4 = addresses.find(addr => addr.addrtype === 'ipv4')?.addr;
+
+    // Use enhanced hostname extraction
+    const hostname = extractHostname(host);
+
+    return {
+      ip: ipv4,
+      hostname: hostname,
+      addresses: addresses,
+      originalHostData: host // Keep original for debugging
+    };
+  }).filter(host => host.ip);
+
+  console.log(`[${scanId}] Found ${activeHosts.length} active hosts:`, activeHosts.map(h => `${h.ip} (${h.hostname || 'no hostname'})`));
+
+  // Debug: Log raw hostname data for first host
+  if (activeHosts.length > 0) {
+    console.log(`[${scanId}] Debug - First host raw data:`, JSON.stringify(activeHosts[0].originalHostData?.hostnames, null, 2).substring(0, 500));
   }
-
-  // Check for common issues
-  const hostsWithHighRiskPorts = scanResults.filter(host =>
-    host.ports.some(p => p.risk_level === 'High' && p.state === 'open')
-  ).length;
-
-  if (hostsWithHighRiskPorts > 0) {
-    findings.push(`${hostsWithHighRiskPorts} devices have high-risk services exposed`);
-  }
-
-  if (findings.length === 0) {
-    findings.push('No significant security issues detected in the scan');
-  }
-
-  return findings;
-}
-
-function generateExecutiveSummary(scanResults) {
-  const activeHosts = scanResults.filter(h => h.status === 'up');
-  const totalHosts = scanResults.length;
 
   if (activeHosts.length === 0) {
-    return `Scan completed: No active devices found among ${totalHosts} scanned addresses.`;
+    return discoveryResult; // Return discovery results if no hosts found
   }
 
-  const totalVulns = scanResults.reduce((sum, host) => sum + host.foundVulns.length, 0);
-  const highRiskHosts = activeHosts.filter(h => h.security_assessment === 'High Risk').length;
-  const securityRating = calculateOverallSecurityRating(scanResults);
+  // Step 2: Quick port scan on each discovered host
+  let combinedXml = `<?xml version="1.0" encoding="UTF-8"?>\n<nmaprun scanner="nmap" args="network-scan" start="${Math.floor(Date.now() / 1000)}">\n`;
+  let totalHostsScanned = 0;
 
-  return `Network security scan completed: ${activeHosts.length} active devices found. ` +
-    `Security rating: ${securityRating}. ` +
-    `${totalVulns} security issues detected. ` +
-    `${highRiskHosts} devices require immediate attention.`;
+  for (const hostInfo of activeHosts) {
+    try {
+      console.log(`[${scanId}] Scanning ports on host: ${hostInfo.ip} (${hostInfo.hostname || 'no hostname'})`);
+      const portResult = await runNmap(
+        PRESETS.network_scan.post_discovery_args,
+        hostInfo.ip,
+        2 * 60 * 1000, // 2 minutes per host
+        `${scanId}-${hostInfo.ip}`
+      );
+
+      // Extract and combine host data, preserving hostname from discovery
+      if (portResult.stdout.includes('<host>')) {
+        let hostContent = portResult.stdout.match(/<host>[\s\S]*?<\/host>/);
+        if (hostContent) {
+          let hostXml = hostContent[0];
+
+          // Enhanced hostname injection
+          if (hostInfo.hostname) {
+            try {
+              const hostData = await xml2js.parseStringPromise(hostXml);
+              if (hostData.host) {
+                // Ensure proper hostnames structure
+                if (!hostData.host.hostnames) {
+                  hostData.host.hostnames = { hostname: [] };
+                }
+
+                // Create hostname entry
+                const hostnameEntry = {
+                  $: { name: hostInfo.hostname, type: 'user' }
+                };
+
+                // Handle different hostname array structures
+                if (Array.isArray(hostData.host.hostnames.hostname)) {
+                  // Add to existing array
+                  hostData.host.hostnames.hostname.push(hostnameEntry);
+                } else if (hostData.host.hostnames.hostname) {
+                  // Convert single object to array
+                  hostData.host.hostnames.hostname = [hostData.host.hostnames.hostname, hostnameEntry];
+                } else {
+                  // Create new array
+                  hostData.host.hostnames.hostname = [hostnameEntry];
+                }
+
+                // Convert back to XML
+                const builder = new xml2js.Builder();
+                hostXml = builder.buildObject(hostData);
+                // Remove the XML declaration since we're combining
+                hostXml = hostXml.replace(/<\?xml[^?]*\?>\n?/, '');
+
+                console.log(`[${scanId}] Successfully injected hostname "${hostInfo.hostname}" for ${hostInfo.ip}`);
+              }
+            } catch (e) {
+              console.error(`[${scanId}] Failed to inject hostname for ${hostInfo.ip}:`, e.message);
+              // Fallback: manually add hostnames section
+              if (!hostXml.includes('<hostnames>')) {
+                const hostnamesSection = `<hostnames><hostname name="${hostInfo.hostname}" type="user"/></hostnames>`;
+                // Insert after addresses but before ports
+                const addressEnd = hostXml.indexOf('</address>');
+                if (addressEnd !== -1) {
+                  const insertPos = hostXml.indexOf('>', addressEnd) + 1;
+                  hostXml = hostXml.slice(0, insertPos) + hostnamesSection + hostXml.slice(insertPos);
+                }
+              }
+            }
+          }
+
+          combinedXml += hostXml + '\n';
+          totalHostsScanned++;
+
+          // Debug: Log the modified XML for this host
+          console.log(`[${scanId}] Modified host XML preview for ${hostInfo.ip}:`, hostXml.substring(0, 300));
+        }
+      } else {
+        console.warn(`[${scanId}] No <host> tag found in port scan results for ${hostInfo.ip}`);
+      }
+    } catch (err) {
+      console.error(`[${scanId}] Failed to scan host ${hostInfo.ip}:`, err.message);
+      // Create error host entry with hostname
+      let errorHostXml = `<host starttime="${Math.floor(Date.now() / 1000)}" endtime="${Math.floor(Date.now() / 1000)}">`;
+      errorHostXml += `<status state="down" reason="scan-failed"/>`;
+      errorHostXml += `<address addr="${hostInfo.ip}" addrtype="ipv4"/>`;
+
+      // Include all addresses from discovery
+      hostInfo.addresses.forEach(addr => {
+        if (addr.addr !== hostInfo.ip) {
+          errorHostXml += `<address addr="${addr.addr}" addrtype="${addr.addrtype}"/>`;
+        }
+      });
+
+      // Include hostname
+      if (hostInfo.hostname) {
+        errorHostXml += `<hostnames><hostname name="${hostInfo.hostname}" type="user"/></hostnames>`;
+      }
+
+      errorHostXml += `<ports/>`;
+      errorHostXml += `</host>`;
+      combinedXml += errorHostXml + '\n';
+    }
+  }
+
+  combinedXml += `</nmaprun>`;
+
+  console.log(`[${scanId}] Combined XML generated with ${totalHostsScanned} hosts scanned`);
+
+  return {
+    ...discoveryResult,
+    stdout: combinedXml,
+    hosts_discovered: activeHosts.length,
+    hosts_scanned: totalHostsScanned,
+    active_hosts: activeHosts // Include for debugging
+  };
 }
+
+// CVE Analysis based on previous scan
+async function runCveAnalysisScan(target, scanId, userId) {
+  console.log(`[${scanId}] Starting CVE analysis for: ${target}`);
+
+  // Get previous scan results for this target
+  const previousScans = await db.collection('Scan')
+    .where('user_id', '==', userId)
+    .where('target', '==', target)
+    .where('status', '==', 'complete')
+    .orderBy('finished_at', 'desc')
+    .limit(1)
+    .get();
+
+  if (previousScans.empty) {
+    throw new Error(`No previous scan found for target: ${target}. Please run a network or deep scan first.`);
+  }
+
+  const previousScan = previousScans.docs[0].data();
+  const previousScanId = previousScans.docs[0].id;
+
+  // Get open ports from previous scan results
+  const previousResults = await db.collection('ScanResults')
+    .where('parent_scan_id', '==', previousScanId)
+    .where('host', '==', target)
+    .get();
+
+  if (previousResults.empty) {
+    throw new Error(`No scan results found for target: ${target}`);
+  }
+
+  // Build port list from previous results
+  const portSet = new Set();
+  previousResults.docs.forEach(doc => {
+    const data = doc.data();
+    if (data.ports && Array.isArray(data.ports)) {
+      data.ports.forEach(port => {
+        if (port.state === 'open' && port.port) {
+          portSet.add(port.port);
+        }
+      });
+    }
+  });
+
+  const ports = Array.from(portSet);
+  if (ports.length === 0) {
+    throw new Error(`No open ports found in previous scan for target: ${target}`);
+  }
+
+  console.log(`[${scanId}] Running CVE scan on ports:`, ports);
+
+  // Run targeted CVE scan on previously found open ports
+  const cveArgs = [
+    '-sT', '-sV', '--version-intensity', '9',
+    '--script', 'vuln,vulners',
+    '-p', ports.join(','),
+    '-T3', '--max-retries', '2',
+    '--host-timeout', '10m', '--script-timeout', '1m',
+    '--open', '--reason', '-oX', '-'
+  ];
+
+  return await runNmap(cveArgs, target, PRESETS.cve_analysis.timeoutMs, scanId);
+}
+
+// Store scan results in Firestore
+async function storeScanResults(scanId, parsed, runResult, preset) {
+  for (const hostResult of parsed.hosts) {
+    const uniqueCVEs = [...new Set(
+      hostResult.foundVulns.flatMap(v => (v.CVEs && v.CVEs.length) ? v.CVEs : (v.CVE ? [v.CVE] : []))
+        .filter(c => c && c !== 'N/A')
+    )];
+
+    // Create ScanResult record for this host
+    const scanResultRef = db.collection('ScanResults').doc();
+    const sanitizedPorts = (hostResult.ports || []).map(p => ({
+      port: p.port,
+      protocol: p.protocol || 'tcp',
+      state: p.state,
+      state_reason: p.state_reason || '',
+      service: {
+        name: p.service?.name || 'unknown',
+        product: p.service?.product || '',
+        version: p.service?.version || '',
+        extrainfo: p.service?.extrainfo || '',
+        ostype: p.service?.ostype || '',
+        method: p.service?.method || ''
+      },
+      category: p.category || 'Other Service',
+      risk_level: p.risk_level || 'Unknown',
+      banner: p.banner || '',
+      summary: p.summary || ''
+    }));
+
+    await safeFirestoreSet(scanResultRef, {
+      scan_id: scanId,
+      host: hostResult.host,
+      hostname: hostResult.hostname,
+      mac_address: hostResult.mac_address,
+      vendor: hostResult.vendor,
+      host_status: hostResult.status,
+      ports: sanitizedPorts,
+      open_ports_count: hostResult.open_ports_count,
+      CVEs: uniqueCVEs,
+      security_assessment: hostResult.security_assessment,
+      device_type: hostResult.device_type,
+      recommendations: hostResult.recommendations,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      network_scan: preset === 'network_scan',
+      parent_scan_id: scanId,
+      scan_duration: runResult.duration,
+      preset_used: preset
+    });
+
+    // Store vulnerabilities
+    for (const vuln of hostResult.foundVulns) {
+      const cves = (vuln.CVEs && v.CVEs.length) ? v.CVEs : (v.CVE ? [v.CVE] : ['N/A']);
+      for (const cve of cves) {
+        if (cve !== 'N/A') {
+          await safeFirestoreSet(db.collection('FoundVulns').doc(), {
+            CVE: cve,
+            severity: vuln.severity,
+            risk_level: vuln.risk_level,
+            title: vuln.title,
+            description: vuln.description,
+            port: vuln.port,
+            host: hostResult.host,
+            service: vuln.service,
+            evidence: vuln.evidence,
+            recommendation: vuln.recommendation,
+            external_links: vuln.external_links,
+            scan_results: [scanResultRef],
+            created_at: admin.firestore.FieldValue.serverTimestamp(),
+            parent_scan_id: scanId,
+            preset_used: preset
+          });
+        }
+      }
+    }
+  }
+}
+
 
 // --- Express API Setup ---
 const app = express();
@@ -808,24 +840,46 @@ app.use(bodyParser.json());
 
 // List available scan presets
 app.get('/presets', (req, res) => {
-  const presetsInfo = Object.keys(PRESETS).map(key => ({
-    name: key,
-    description: PRESETS[key].description,
-    timeout: PRESETS[key].timeoutMs / 60000 + ' minutes',
-    estimatedDuration: key === 'quick' ? '30-300 seconds' : '10-180 minutes',
-    is_network_capable: true
-  }));
+  const presetsInfo = {
+    network_scan: {
+      name: 'network_scan',
+      description: 'Discover all active hosts on a network and perform quick port scans on common ports',
+      timeout: '10 minutes',
+      best_for: 'Network inventory and quick security assessment',
+      example_targets: ['192.168.1.0/24', '10.0.0.1-100', 'scanme.nmap.org']
+    },
+    deep_scan: {
+      name: 'deep_scan',
+      description: 'Comprehensive single target scan with service detection and basic security checks',
+      timeout: '20 minutes',
+      best_for: 'Detailed analysis of individual systems',
+      example_targets: ['192.168.1.100', 'example.com', '10.0.0.50']
+    },
+    cve_analysis: {
+      name: 'cve_analysis',
+      description: 'CVE vulnerability analysis using previous scan results (requires existing scan data)',
+      timeout: '15 minutes',
+      best_for: 'Targeted vulnerability assessment',
+      requirements: 'Must have previously scanned the target',
+      example_targets: ['192.168.1.100'] // Must be previously scanned
+    }
+  };
+
   res.json({ presets: presetsInfo });
 });
 
-// Start a scan (handles both single hosts and networks)
+// Helper function for estimated duration
+
+
+// Helper function for scan type categorization
+
+
 app.post('/scan', async (req, res) => {
   try {
     const { target, preset, userId, targetId, scanName } = req.body;
-    const scanType = preset === 'deep' ? 'deep' : (preset === 'network_discovery' ? 'network_discovery' : 'quick');
 
     if (!target || !userId) return res.status(400).json({ error: 'target and userId required' });
-    if (!PRESETS[scanType]) return res.status(400).json({ error: 'unknown scan type' });
+    if (!PRESETS[preset]) return res.status(400).json({ error: 'unknown preset' });
 
     let scanTarget;
     try {
@@ -836,7 +890,7 @@ app.post('/scan', async (req, res) => {
 
     if (!isAllowedTarget(scanTarget)) return res.status(403).json({ error: 'target not allowed' });
 
-    const isNetworkScan = /(\/\d{1,2}$|-\d{1,3}$|\[.*\]|,)/.test(scanTarget);
+    const isNetworkScan = preset === 'network_scan' || /(\/\d{1,2}$|-\d{1,3}$|\[.*\]|,)/.test(scanTarget);
 
     // Create scan record in 'Scan'
     const scanId = uuidv4();
@@ -845,11 +899,12 @@ app.post('/scan', async (req, res) => {
       submitted_at: admin.firestore.FieldValue.serverTimestamp(),
       started_at: null,
       finished_at: null,
-      scan_type: scanType,
+      scan_type: preset,
       target: scanTarget,
       user_id: userId,
-      scan_name: scanName || `${isNetworkScan ? 'Network' : 'Host'} Scan ${new Date().toLocaleString()}`,
-      is_network_scan: isNetworkScan
+      scan_name: scanName || `${preset} - ${scanTarget}`,
+      is_network_scan: isNetworkScan,
+      preset_used: preset
     });
 
     // Run scan asynchronously
@@ -860,139 +915,31 @@ app.post('/scan', async (req, res) => {
           started_at: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(`[${scanId}] Starting ${isNetworkScan ? 'network' : 'host'} scan for: ${scanTarget} with preset: ${scanType}`);
-        runResult = await runNmap(PRESETS[scanType].args, scanTarget, PRESETS[scanType].timeoutMs, scanId);
-        const stdout = runResult.stdout;
-        console.log(`[${scanId}] Scan completed. stdout length: ${stdout.length}, raw_path: ${runResult.raw_path || 'n/a'}`);
+        console.log(`[${scanId}] Starting ${preset} scan for: ${scanTarget}`);
 
-        // store raw preview for debugging if parsing yields no hosts
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          raw_output_preview: stdout.slice(0, 2000),
-          raw_output_path: runResult.raw_path || ''
-        });
+        // Special handling for network scans
+        if (preset === 'network_scan') {
+          runResult = await runNetworkDiscoveryScan(scanTarget, scanId);
+        }
+        // Special handling for CVE analysis (requires previous scan)
+        else if (preset === 'cve_analysis') {
+          runResult = await runCveAnalysisScan(scanTarget, scanId, userId);
+        }
+        // Regular deep scan
+        else {
+          runResult = await runNmap(PRESETS[preset].args, scanTarget, PRESETS[preset].timeoutMs, scanId);
+        }
+
+        const stdout = runResult.stdout;
+        console.log(`[${scanId}] Scan completed. stdout length: ${stdout.length}`);
+
         // Parse scan result
         const parsed = await parseNetworkScanXml(stdout, scanTarget);
 
-        if (!parsed.hosts || parsed.hosts.length === 0) {
-          console.warn(`[${scanId}] Parser returned zero hosts. Check raw_output_path and raw_output_preview on Scan doc.`);
-          await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-            parse_warning: 'No hosts parsed from nmap output; raw output saved for inspection'
-          });
-        }
-        console.log(`[${scanId}] Parsed scan result:`, {
-          network: parsed.network,
-          totalHosts: parsed.totalHosts,
-          activeHosts: parsed.activeHosts,
-          openPortsTotal: parsed.openPortsTotal,
-          vulnerabilitiesTotal: parsed.vulnerabilitiesTotal,
-          overall_security_rating: parsed.overall_security_rating
-        });
+        // Store results in Firestore
+        await storeScanResults(scanId, parsed, runResult, preset);
 
-        // Create ScanResult records for each host
-        for (const hostResult of parsed.hosts) {
-          const uniqueCVEs = [...new Set(
-            hostResult.foundVulns.flatMap(v => (v.CVEs && v.CVEs.length) ? v.CVEs : (v.CVE ? [v.CVE] : []) )
-              .filter(c => c && c !== 'N/A')
-          )];
-
-          // Create ScanResult record for this host
-          const scanResultRef = db.collection('ScanResult').doc();
-          const sanitizedPorts = (hostResult.ports || []).map(p => ({
-            port: p.port,
-            protocol: p.protocol || 'tcp',
-            state: p.state,
-            state_reason: p.state_reason || '',
-            service: {
-              name: p.service?.name || 'unknown',
-              product: p.service?.product || '',
-              version: p.service?.version || '',
-              extrainfo: p.service?.extrainfo || '',
-              ostype: p.service?.ostype || '',
-              method: p.service?.method || ''
-            },
-            category: p.category || 'Other Service',
-            risk_level: p.risk_level || 'Unknown',
-            banner: p.banner || '',
-            summary: p.summary || ''
-          }));
-
-          // compact summary (small, index-friendly) instead of duplicating full port objects
-          const portSummaries = sanitizedPorts.map(s => ({
-            port: s.port,
-            service: s.service.name,
-            version: s.service.version,
-            product: s.service.product,
-            category: s.category,
-            risk_level: s.risk_level
-          })).filter(s => s.service && s.service !== 'unknown');
-
-          await safeFirestoreSet(scanResultRef, {
-            scan_id: scanId,
-            host: hostResult.host,
-            hostname: hostResult.hostname,
-            mac_address: hostResult.mac_address,
-            vendor: hostResult.vendor,
-            host_status: hostResult.status,
-
-            // Technical details (detailed ports)
-            ports: sanitizedPorts,
-            open_ports_count: hostResult.open_ports_count,
-            CVEs: uniqueCVEs,
-
-            // User-friendly information
-            security_assessment: hostResult.security_assessment,
-            device_type: hostResult.device_type,
-            recommendations: hostResult.recommendations,
-
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            network_scan: isNetworkScan,
-            parent_scan_id: scanId,
-            scan_duration: runResult.duration,
-
-            // small summary for queries (no duplication of full port objects)
-            detected_ports_summary: portSummaries
-          });
-
-          // Create/Update FoundVulns records for this host
-          for (const vuln of hostResult.foundVulns) {
-            const cves = (vuln.CVEs && vuln.CVEs.length) ? vuln.CVEs : (vuln.CVE ? [vuln.CVE] : ['N/A']);
-            for (const cve of cves) {
-              const foundVulnQuery = await db.collection('FoundVulns')
-                .where('CVE', '==', cve)
-                .where('port', '==', vuln.port)
-                .where('host', '==', hostResult.host)
-                .get();
-
-              if (foundVulnQuery.empty) {
-                await safeFirestoreSet(db.collection('FoundVulns').doc(), {
-                  CVE: cve,
-                  severity: vuln.severity,
-                  risk_level: vuln.risk_level,
-                  title: vuln.title,
-                  description: vuln.description,
-                  port: vuln.port,
-                  host: hostResult.host,
-                  service: vuln.service,
-                  evidence: vuln.evidence,
-                  recommendation: vuln.recommendation,
-                  external_links: vuln.external_links,
-                  scan_results: [scanResultRef],
-                  created_at: admin.firestore.FieldValue.serverTimestamp(),
-                  network_scan: isNetworkScan,
-                  parent_scan_id: scanId
-                });
-              } else {
-                const docRef = foundVulnQuery.docs[0].ref;
-                await safeFirestoreUpdate(docRef, {
-                  scan_results: admin.firestore.FieldValue.arrayUnion(scanResultRef),
-                  last_detected: admin.firestore.FieldValue.serverTimestamp()
-                });
-              }
-            }
-          }
-        }
-
-        // Update main scan record with comprehensive summary
+        // Update main scan record
         await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
           status: 'complete',
           finished_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -1004,16 +951,7 @@ app.post('/scan', async (req, res) => {
             scan_duration: runResult.duration,
             overall_security_rating: parsed.overall_security_rating,
             key_findings: parsed.key_findings,
-            executive_summary: parsed.executive_summary,
-            hosts_scanned: parsed.hosts.map(h => ({
-              host: h.host,
-              hostname: h.hostname,
-              status: h.status,
-              security_assessment: h.security_assessment,
-              open_ports: h.open_ports_count,
-              vulnerabilities: h.foundVulns.length,
-              device_type: h.device_type
-            }))
+            executive_summary: parsed.executive_summary
           }
         });
 
@@ -1035,10 +973,10 @@ app.post('/scan', async (req, res) => {
     return res.json({
       scanId,
       status: 'ongoing',
-      scanType,
+      preset,
       target: scanTarget,
       is_network_scan: isNetworkScan,
-      estimatedTimeout: PRESETS[scanType].timeoutMs / 1000 + ' seconds',
+      estimatedTimeout: PRESETS[preset].timeoutMs / 1000 + ' seconds',
       message: `Scan started. Use GET /scan/${scanId} to check status.`
     });
 
@@ -1056,18 +994,18 @@ app.get('/scan/:scanId', async (req, res) => {
     const scanData = scanDoc.data();
 
     // Get all ScanResults for this scan
-    const resultsSnap = await db.collection('ScanResult')
+    const resultsSnap = await db.collection('ScanResults')
       .where('parent_scan_id', '==', scanId)
       .get();
 
-    const scanResults = resultsSnap.docs.map(doc => ({
+    const ScanResults = resultsSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
 
     // Get FoundVulns for all hosts in this scan
     let foundVulns = [];
-    for (const result of scanResults) {
+    for (const result of ScanResults) {
       const vulnsSnap = await db.collection('FoundVulns')
         .where('parent_scan_id', '==', scanId)
         .where('host', '==', result.host)
@@ -1081,14 +1019,14 @@ app.get('/scan/:scanId', async (req, res) => {
 
     return res.json({
       scan: scanData,
-      scanResults: scanResults,
+      ScanResults: ScanResults,
       foundVulns: foundVulns,
       summary: {
-        total_hosts: scanResults.length,
-        hosts_with_ports: scanResults.filter(r => r.open_ports_count > 0).length,
+        total_hosts: ScanResults.length,
+        hosts_with_ports: ScanResults.filter(r => r.open_ports_count > 0).length,
         hosts_with_vulns: [...new Set(foundVulns.map(v => v.host))].length,
         total_vulnerabilities: foundVulns.length,
-        total_open_ports: scanResults.reduce((sum, r) => sum + r.open_ports_count, 0),
+        total_open_ports: ScanResults.reduce((sum, r) => sum + r.open_ports_count, 0),
         overall_security_rating: scanData.summary?.overall_security_rating || 'UNKNOWN'
       }
     });
@@ -1123,7 +1061,8 @@ app.get('/health', (req, res) => res.json({
   ok: true,
   now: new Date().toISOString(),
   presets: Object.keys(PRESETS),
-  features: ['single_host_scanning', 'network_scanning', 'vulnerability_detection', 'service_detection', 'user_friendly_reports']
+  features: ['network_discovery', 'deep_single_scan', 'cve_analysis'],
+  simplicity: '3-option-scan-system'
 }));
 
 app.listen(PORT, () => console.log(`Nmap-Firebase API listening on ${PORT}`));
