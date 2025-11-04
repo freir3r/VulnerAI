@@ -9,6 +9,7 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
 const xml2js = require('xml2js');
+const cors = require('cors');
 
 const PORT = process.env.PORT || 3000;
 
@@ -836,6 +837,7 @@ async function storeScanResults(scanId, parsed, runResult, preset) {
 
 // --- Express API Setup ---
 const app = express();
+app.use(cors());
 app.use(bodyParser.json());
 
 // List available scan presets
