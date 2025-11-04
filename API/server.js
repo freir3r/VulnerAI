@@ -24,8 +24,6 @@ try {
 }
 
 const db = admin.firestore();
-
-// --- Firestore Helper Functions ---
 function cleanFirestoreData(data, _seen = new WeakSet()) {
   const seen = _seen || new WeakSet();
   if (data === undefined || data === null) return '';
@@ -33,8 +31,13 @@ function cleanFirestoreData(data, _seen = new WeakSet()) {
   if (seen.has(data)) return '[Circular]';
   seen.add(data);
 
-  if (typeof data.path === 'string' && typeof data.id === 'string') {
-    return data.path;
+  // Handle Firestore DocumentReference
+  if (typeof data.path === 'string' && typeof data.id === 'string' && data.firestore) {
+    return {
+      _firestore_type: 'DocumentReference',
+      path: data.path,
+      id: data.id
+    };
   }
 
   if (typeof data.toDate === 'function') {
@@ -175,8 +178,8 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
     deviceCategory = 'networking';
     confidence = 'high';
   }
-  else if (vendorLower.includes('dell') || vendorLower.includes('hp') || vendorLower.includes('lenovo') || 
-           vendorLower.includes('microsoft') || vendorLower.includes('asus') || vendorLower.includes('acer')) {
+  else if (vendorLower.includes('dell') || vendorLower.includes('hp') || vendorLower.includes('lenovo') ||
+    vendorLower.includes('microsoft') || vendorLower.includes('asus') || vendorLower.includes('acer')) {
     deviceType = 'Windows PC/Server';
     deviceCategory = 'computer';
     confidence = 'high';
@@ -451,7 +454,7 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
       // Extract addresses - handle UPPERCASE ADDRESS array
       if (hostObj.ADDRESS) {
         const addresses = Array.isArray(hostObj.ADDRESS) ? hostObj.ADDRESS : [hostObj.ADDRESS];
-        
+
         for (const addr of addresses) {
           if (addr.$ && addr.$.ADDRTYPE === 'ipv4') {
             ipv4 = addr.$.ADDR;
@@ -469,10 +472,10 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
         if (typeof hostObj.HOSTNAMES === 'string' && hostObj.HOSTNAMES.trim() === '') {
           hostname = '';
         } else if (hostObj.HOSTNAMES.HOSTNAME) {
-          const hostnames = Array.isArray(hostObj.HOSTNAMES.HOSTNAME) 
-            ? hostObj.HOSTNAMES.HOSTNAME 
+          const hostnames = Array.isArray(hostObj.HOSTNAMES.HOSTNAME)
+            ? hostObj.HOSTNAMES.HOSTNAME
             : [hostObj.HOSTNAMES.HOSTNAME];
-          
+
           if (hostnames.length > 0 && hostnames[0].$ && hostnames[0].$.NAME) {
             hostname = hostnames[0].$.NAME;
           }
@@ -911,31 +914,56 @@ app.post('/scan/deep-multiple', async (req, res) => {
   }
 });
 
-// POST /targets/add-from-scan
+// POST /targets/add-from-scan - WITH FIRESTORE REFERENCES
 app.post('/targets/add-from-scan', async (req, res) => {
   try {
     const { scanId, userId, listName = "Discovered Targets" } = req.body;
+
+    if (!scanId || !userId) {
+      return res.status(400).json({ error: 'scanId and userId required' });
+    }
+
+    // Get scan details first - using Reference
+    const scanRef = db.collection('Scan').doc(scanId);
+    const scanDoc = await scanRef.get();
+    if (!scanDoc.exists) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
+    const scanData = scanDoc.data();
 
     // Get scan results
     const resultsSnap = await db.collection('ScanResults')
       .where('parent_scan_id', '==', scanId)
       .get();
 
-    const targets = [];
+    if (resultsSnap.empty) {
+      return res.status(404).json({ error: 'No scan results found' });
+    }
+
+    const targetRefs = []; // Store Firestore References
+    const targetDetails = []; // Store basic info for quick display
+
     const targetListRef = db.collection('TargetLists').doc();
 
-    // Create target list
+    // Create target list with proper References
     await safeFirestoreSet(targetListRef, {
       list_id: targetListRef.id,
       name: listName,
       description: `Targets discovered from scan ${scanId}`,
-      targets: [],
+      targets: targetRefs, // Firestore References array
+      target_details: targetDetails, // Basic info for quick access
       user_id: userId,
+      source_scan: scanRef, // ← Firestore Reference to Scan
+      source_scan_id: scanId, // Also keep string ID for convenience
+      source_scan_name: scanData.scan_name,
+      source_scan_target: scanData.target,
       created_at: admin.firestore.FieldValue.serverTimestamp(),
-      scan_count: 0
+      target_count: 0,
+      scan_count: 0,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Add each host as a target
+    // Add each host as a target with proper References
     for (const doc of resultsSnap.docs) {
       const hostData = doc.data();
       const targetRef = db.collection('Targets').doc();
@@ -947,36 +975,69 @@ app.post('/targets/add-from-scan', async (req, res) => {
         mac_address: hostData.mac_address || '',
         vendor: hostData.vendor || '',
         device_type: hostData.device_type || 'Unknown',
+        device_category: hostData.device_category || 'unknown',
+        classification_confidence: hostData.classification_confidence || 'low',
         first_seen: admin.firestore.FieldValue.serverTimestamp(),
         last_seen: admin.firestore.FieldValue.serverTimestamp(),
         scan_count: 0,
         user_id: userId,
+        discovered_in_scan: scanRef, // ← Firestore Reference to Scan
+        discovered_in_scan_id: scanId, // Also keep string ID
         tags: ['discovered'],
-        notes: `Discovered on ${new Date().toLocaleDateString()}`
+        notes: `Discovered during ${scanData.scan_name} on ${new Date().toLocaleDateString()}`,
+        classification_data: {
+          basis: hostData.classification_basis || 'unknown',
+          confidence: hostData.classification_confidence || 'low',
+          device_type: hostData.device_type || 'Unknown',
+          device_category: hostData.device_category || 'unknown'
+        },
+        // Reference to the parent target list
+        target_lists: [targetListRef]
       };
 
       await safeFirestoreSet(targetRef, target);
-      targets.push(targetRef.id);
+
+      // Add Firestore Reference to the array
+      targetRefs.push(targetRef);
+
+      // Also store basic info for quick display
+      targetDetails.push({
+        target_id: targetRef.id,
+        host: target.host,
+        hostname: target.hostname,
+        device_type: target.device_type,
+        device_category: target.device_category,
+        confidence: target.classification_confidence,
+        added_at: admin.firestore.FieldValue.serverTimestamp()
+      });
     }
 
-    // Update target list with target references
+    // Update target list with References
     await safeFirestoreUpdate(targetListRef, {
-      targets: targets
+      targets: targetRefs,
+      target_details: targetDetails,
+      target_count: targetRefs.length,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.json({
       success: true,
-      targetsAdded: targets.length,
+      targetsAdded: targetRefs.length,
       listId: targetListRef.id,
-      message: `Added ${targets.length} targets to "${listName}"`
+      scanReference: {
+        scan_id: scanId,
+        scan_name: scanData.scan_name,
+        original_target: scanData.target
+      },
+      message: `Added ${targetRefs.length} targets to "${listName}" from scan ${scanId}`
     });
 
   } catch (err) {
+    console.error('Error adding targets from scan:', err);
     res.status(500).json({ error: 'Failed to add targets', details: err.message });
   }
 });
-
-// GET /targets/lists/:userId
+// GET /targets/lists/:userId - WITH REFERENCE RESOLUTION
 app.get('/targets/lists/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -989,26 +1050,51 @@ app.get('/targets/lists/:userId', async (req, res) => {
       listsSnap.docs.map(async (doc) => {
         const listData = doc.data();
 
-        // Get target details for each list
-        const targetsSnap = await db.collection('Targets')
-          .where('target_id', 'in', listData.targets || [])
-          .get();
+        // Resolve Firestore References to get full target data
+        const resolvedTargets = await Promise.all(
+          (listData.targets || []).map(async (targetRef) => {
+            const targetDoc = await targetRef.get();
+            if (targetDoc.exists) {
+              return {
+                id: targetDoc.id,
+                ...targetDoc.data(),
+                // Include the reference itself
+                _ref: targetRef
+              };
+            }
+            return null;
+          })
+        );
 
-        const targets = targetsSnap.docs.map(t => ({
-          id: t.id,
-          ...t.data()
-        }));
+        // Resolve scan reference if needed
+        let sourceScanData = null;
+        if (listData.source_scan) {
+          const scanDoc = await listData.source_scan.get();
+          if (scanDoc.exists) {
+            sourceScanData = {
+              id: scanDoc.id,
+              ...scanDoc.data()
+            };
+          }
+        }
 
         return {
           id: doc.id,
           ...listData,
-          targets: targets
+          targets: resolvedTargets.filter(t => t !== null), // Full target objects
+          target_details: listData.target_details || [], // Quick info fallback
+          source_scan_data: sourceScanData, // Resolved scan data
+          // Keep the references for frontend use
+          _target_refs: listData.targets || [],
+          _scan_ref: listData.source_scan
         };
       })
     );
 
     res.json({ lists });
+
   } catch (err) {
+    console.error('Error getting target lists:', err);
     res.status(500).json({ error: 'Failed to get target lists', details: err.message });
   }
 });
