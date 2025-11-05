@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Scans</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="scans.css" />
+</head>
+
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button id="btn-burger" class="icon-btn" aria-label="Toggle menu">
+      <span class="i-burger"></span>
+    </button>
+
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-premium" class="btn-premium" title="Unlock Premium">★ Unlock Premium</button>
+
+      <div class="user-area">
+        <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
+          <img src="../Resources/Dashboard/Icon.png" class="avatar-icon" alt="User" />
+          <span class="avatar-caret">▾</span>
+        </button>
+        <div id="menu-user" class="menu" role="menu" aria-hidden="true">
+          <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
+          <button class="menu-item" role="menuitem" data-action="logout">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <button id="btn-new-scan" class="btn-new">
+          <img class="ico" src="../Resources/Dashboard/New Scan Eye.png" alt="" /> <span>New Scan</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section">Your Workspace</div>
+
+      <nav class="nav">
+        <a href="index.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/Home.png" alt="" /> <span>Home</span>
+        </a>
+        <a href="scans.html" class="nav-item active">
+          <img class="ico" src="../Resources/Dashboard/Eye.png" alt="" /> <span>Scans</span>
+        </a>
+        <a href="iplist.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/File.png" alt="" /> <span>IP List</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main id="main" class="main">
+      <div class="page-header">
+        <h1 id="page-title">Scans</h1>
+        <button id="btn-show-history" class="btn-secondary" style="margin-left: auto;">Show History</button>
+      </div>
+
+      <!-- New Scan Modal -->
+      <div id="modal-newscan" class="modal-newscan" aria-hidden="true">
+        <div class="backdrop" data-close></div>
+        <div class="dialog">
+          <button class="close" data-close aria-label="Close">×</button>
+          <h2>New Scan</h2>
+          
+          <form id="newscan-form" novalidate>
+            <div class="ns-field">
+              <label class="ns-label">Target</label>
+
+              <div class="host-select" style="margin-bottom:10px;">
+                <select id="ns-choose" class="input" aria-label="Choose saved target">
+                  <option value="">Choose from saved targets…</option>
+                  <!-- JS populates -->
+                </select>
+                <span class="muted small" style="margin-left:8px;">or type a host/IP below</span>
+              </div>
+
+              <input id="ns-target" class="ns-input" placeholder="Host / IP Address (e.g. 8.8.8.8 or example.com)" />
+            </div>
+
+            <div class="ns-row">
+              <div class="ns-col">
+                <div class="ns-label">Scan Type</div>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="quick" checked /> Quick</label>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="deep-single" /> Deep-Single</label>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="deep-multiple" /> Deep-Multiple</label>
+              </div>
+
+              <div class="ns-col">
+                <div class="ns-label">Protocol</div>
+                <label class="ns-radio"><input type="radio" name="ns-proto" value="TCP" checked /> TCP</label>
+                <label class="ns-radio"><input type="radio" name="ns-proto" value="UDP" /> UDP</label>
+              </div>
+            </div>
+
+            <label class="ns-check">
+              <input type="checkbox" id="ns-tos" />
+              <span>I declare that I am authorized to scan this network and accept the Terms of Service</span>
+            </label>
+
+            <div class="ns-actions">
+              <button type="submit" id="ns-start" class="btn-primary" disabled>Start Scan</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Active Scan View -->
+      <section id="view-active-scan" class="view" style="display: none;">
+        <!-- Loading State -->
+        <div id="scan-loading" class="scan-loading">
+          <div class="loading-spinner"></div>
+          <h3>Scan in Progress</h3>
+          <p>Scanning <span id="loading-target">target</span>... This may take a few minutes.</p>
+          <div class="loading-progress">
+            <div class="progress-bar">
+              <div class="progress-fill"></div>
+            </div>
+            <span class="progress-text">Initializing...</span>
+          </div>
+        </div>
+
+        <!-- Results Content -->
+        <div id="scan-results-content" style="display: none;">
+          <!-- Header Section -->
+          <div class="scan-header">
+            <h1>Active Scan</h1>
+            <div class="scan-meta-grid">
+              <div class="meta-group">
+                <div class="meta-label">Target</div>
+                <div class="meta-value" id="sr-target">scanme.nmap.org</div>
+              </div>
+              <div class="meta-group">
+                <div class="meta-label">Scan Type</div>
+                <div class="meta-value" id="sr-type">Quick Scan</div>
+              </div>
+              <div class="meta-group">
+                <div class="meta-label">Summary</div>
+                <div class="meta-value"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary Section -->
+          <div class="summary-section">
+            <div class="summary-grid">
+              <div class="summary-item">
+                <div class="summary-number" id="sr-active-hosts">1</div>
+                <div class="summary-label">Active Hosts</div>
+              </div>
+              <div class="summary-item gauge-item">
+                <div class="gauge-svg">
+                  <svg viewBox="0 0 120 60">
+                    <path class="g-track" d="M 10,50 A 50,50 0 0 1 110,50" />
+                    <path id="g-bar" class="g-bar" d="M 10,50 A 50,50 0 0 1 110,50" 
+                          stroke-dasharray="0 157" stroke-dashoffset="0" />
+                  </svg>
+                </div>
+                <div class="summary-number" id="sr-ports-text">3/50</div>
+                <div class="summary-label">Open Ports</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-number" id="sr-cves">4</div>
+                <div class="summary-label">CVEs</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Content Sections -->
+          <div class="scan-content">
+            <!-- Host Section -->
+            <div class="section">
+              <div class="section-header">
+                <h2>Host [Host 1]</h2>
+              </div>
+              <div id="ports-table-container">
+                <!-- Ports table will be inserted here -->
+              </div>
+            </div>
+
+            <!-- Vulnerabilities Section -->
+            <div class="section">
+              <div class="vuln-header">
+                <h2>Vulnerabilities (CVEs detected)</h2>
+                <div class="vuln-actions">
+                  <button class="btn-secondary" id="btn-show-history-results">Show History</button>
+                  <button class="btn-secondary" id="scan-refresh">Refresh</button>
+                  <button class="btn-secondary" id="btn-clear-trivial">Clear Low & Trivial (CVSS < 4)</button>
+                </div>
+              </div>
+              <div id="vuln-table-container">
+                <!-- Vulnerabilities table will be inserted here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scans History View -->
+      <section id="view-scans-history" class="view active">
+        <div class="scans-history">
+          <div class="history-header">
+            <h3>Scan History</h3>
+            <span class="muted" id="scans-count">0 scans</span>
+          </div>
+
+          <div class="scans-list" id="scans-list">
+            <!-- Scans will be populated here -->
+          </div>
+
+          <div class="scans-empty" id="scans-empty">
+            <h4>No scans yet.</h4>
+            <p class="muted">Start your first scan to see results here.</p>
+            <button class="btn-primary" id="empty-new-scan">Start New Scan</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Premium Modal -->
+  <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
+    <div class="backdrop" data-close></div>
+    <div class="dialog">
+      <button class="close" data-close aria-label="Close">×</button>
+      <h2 id="modal-premium-title">Unlock Premium</h2>
+      <p>Get advanced reports, scheduled scans, and unlimited history.</p>
+      <ul class="features">
+        <li>⏱ Scheduled scans</li>
+        <li>📊 Full reports (PDF/CSV)</li>
+        <li>🔔 Alerts</li>
+      </ul>
+      <div class="actions">
+        <button class="btn-secondary" data-close>Later</button>
+        <button class="btn-primary" id="btn-upgrade">Upgrade — €9.99/month</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script src="scans.js"></script>
+  <script>
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const m = document.getElementById('modal-premium');
+        if (m) m.setAttribute('aria-hidden', 'true');
+        const ns = document.getElementById('modal-newscan');
+        if (ns) ns.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    try {
+      if (!localStorage.getItem('vulnerai.auth')) {
+        window.location.replace('login.html');
+      }
+    } catch (e) {
+      window.location.replace('login.html');
+    }
+  </script>
+</body>
+
+</html>

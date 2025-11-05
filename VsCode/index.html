@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="home.css" />
+</head>
+
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button id="btn-burger" class="icon-btn" aria-label="Toggle menu">
+      <span class="i-burger"></span>
+    </button>
+
+    <!-- LOGO (white, no text) -->
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-premium" class="btn-premium" title="Unlock Premium">★ Unlock Premium</button>
+
+      <div class="user-area">
+        <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
+          <img src="../Resources/Dashboard/Icon.png" class="avatar-icon" alt="User" />
+          <span class="avatar-caret">▾</span>
+        </button>
+        <div id="menu-user" class="menu" role="menu" aria-hidden="true">
+          <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
+          <button class="menu-item" role="menuitem" data-action="logout">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <a href="scans.html" class="btn-new">
+          <img class="ico" src="../Resources/Dashboard/New Scan Eye.png" alt="" /> <span>New Scan</span>
+        </a>
+      </div>
+
+      <div class="sidebar-section">Your Workspace</div>
+
+      <nav class="nav">
+        <a href="index.html" class="nav-item active">
+          <img class="ico" src="../Resources/Dashboard/Home.png" alt="" /> <span>Home</span>
+        </a>
+        <a href="scans.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/Eye.png" alt="" /> <span>Scans</span>
+        </a>
+        <a href="iplist.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/File.png" alt="" /> <span>IP List</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main id="main" class="main">
+      <div class="page-header">
+        <h1 id="page-title">Dashboard</h1>
+      </div>
+
+      <!-- Home -->
+      <section id="view-home" class="view active" aria-labelledby="page-title">
+        <div class="empty">
+          <h3>Welcome to VulnerAI</h3>
+          <p>Start a quick scan on your IP or domain.</p>
+          <a href="scans.html" class="btn-primary" id="cta-new-scan">Start a Scan</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Premium (kept) -->
+  <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
+    <div class="backdrop" data-close></div>
+    <div class="dialog">
+      <button class="close" data-close aria-label="Close">×</button>
+      <h2 id="modal-premium-title">Unlock Premium</h2>
+      <p>Get advanced reports, scheduled scans, and unlimited history.</p>
+      <ul class="features">
+        <li>⏱ Scheduled scans</li>
+        <li>📊 Full reports (PDF/CSV)</li>
+        <li>🔔 Alerts</li>
+      </ul>
+      <div class="actions">
+        <button class="btn-secondary" data-close>Later</button>
+        <button class="btn-primary" id="btn-upgrade">Upgrade — €9.99/month</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script src="home.js"></script>
+  <script>
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const m = document.getElementById('modal-premium');
+        if (m) m.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    try {
+      if (!localStorage.getItem('vulnerai.auth')) {
+        window.location.replace('login.html');
+      }
+    } catch (e) {
+      window.location.replace('login.html');
+    }
+  </script>
+</body>
+
+</html>
