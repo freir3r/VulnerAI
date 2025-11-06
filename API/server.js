@@ -82,18 +82,30 @@ const PRESETS = {
   // Ultra Quick Scan: Just IPs and hostnames (30-60 seconds)
   quick_scan: {
     args: [
-      '-sn',                      // Host discovery only
-      '-PE', '-PP',               // Light ICMP
-      '-PS21,22,53,80,443',       // Minimal TCP ports
-      '-T4',                      // Aggressive but not maximum (T5 is too aggressive)
-      '--min-hostgroup', '64',    // More reasonable parallel scanning
-      '--min-parallelism', '10',  // Reduced from 20
-      '--host-timeout', '10s',    // Shorter timeout
-      '--max-retries', '1',       // Allow 1 retry for reliability
-      '--system-dns',             // DNS resolution
+      '-sn',                   // Host discovery only
+      '-PR',                   // ARP discovery (this works!)
+      // REMOVE TCP probes since they're blocked:
+      // '-PS80,443,22',       // TCP SYN (blocked)
+      // '-PA80,443',          // TCP ACK (blocked)
+      // REMOVE UDP/SCTP:
+      // '-PU53,123,161',      // UDP (probably blocked)
+      // '-PY443,3389',        // SCTP (probably blocked)
+      '-T4',                   // Aggressive timing
+      '--min-hostgroup', '128',
+      '--max-hostgroup', '256',
+      '--min-parallelism', '10',
+      '--max-parallelism', '20',
+      '--host-timeout', '30s', // Much shorter since ARP is fast
+      '--max-retries', '1',
+      // No DNS needed for ARP scanning
       '-oX', '-'
     ],
-    timeoutMs: 90 * 1000, // 90 seconds max (more realistic)
+    calculateTimeout: function (target) {
+      const hostCount = estimateHostCount(target);
+      const perHostTime = 1000; // 1 second per host (aggressive)
+      const baseTime = 20000; // 20 seconds base
+      return Math.min(baseTime + (hostCount * perHostTime), 300000); // Max 5 min
+    },
     description: 'Fast network discovery - finds IPs, MAC addresses, hostnames, and device types',
     category: 'network_discovery',
     intensity: 'quick'
@@ -109,14 +121,128 @@ const PRESETS = {
       '--host-timeout', '10m', '--open', '--reason',
       '--system-dns', '-oX', '-'
     ],
-    timeoutMs: 15 * 60 * 1000,
+    calculateTimeout: function (target) {
+      const hostCount = estimateHostCount(target);
+      const perHostTime = 300000; // 5 minutes per host (deep scan is slow)
+      const baseTime = 60000; // 1 minute base
+      return Math.min(baseTime + (hostCount * perHostTime), 3600000); // Max 1 hour
+    },
     description: 'Comprehensive single target scan',
     category: 'deep_scan',
     intensity: 'comprehensive'
   }
 };
 
+// Add this RIGHT AFTER the PRESETS object definition:
+// Ensure all presets have calculateTimeout method
+Object.values(PRESETS).forEach(preset => {
+  if (!preset.calculateTimeout || typeof preset.calculateTimeout !== 'function') {
+    console.warn(`Preset ${preset.description || 'unknown'} missing calculateTimeout, adding default`);
+    preset.calculateTimeout = function (target) {
+      const hostCount = estimateHostCount(target);
+      const baseTime = 60000; // 1 minute base
+      const perHostTime = 5000; // 5 seconds per host
+      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 minutes
+    };
+  }
+});
+
 // --- Helper Functions ---
+
+// Add these helper functions right before your app.post('/scan'):
+
+function extractSampleIP(target) {
+  console.log(`[Pre-scan] Extracting sample IP from: ${target}`);
+
+  // Handle subnet notation (e.g., 10.208.192.0/26 → 10.208.192.1)
+  const subnetMatch = target.match(/^(\d+\.\d+\.\d+)\.0\/(\d+)$/);
+  if (subnetMatch) {
+    return `${subnetMatch[1]}.1`; // Always use .1 for subnet gateways
+  }
+
+  // Handle IP ranges (e.g., 10.208.192.1-50 → 10.208.192.1)
+  if (target.includes('-')) {
+    return target.split('-')[0];
+  }
+
+  // Handle single IPs or other formats
+  return target;
+}
+
+function checkNetworkReachable(ip) {
+  return new Promise((resolve) => {
+    console.log(`[Pre-scan] Pinging ${ip}...`);
+
+    // Cross-platform ping command
+    const isWindows = process.platform === 'win32';
+    const pingArgs = isWindows
+      ? ['-n', '2', '-w', '2000', ip]  // Windows: 2 packets, 2 second timeout
+      : ['-c', '2', '-W', '2', ip];    // Linux/Mac: 2 packets, 2 second timeout
+
+    const ping = spawn('ping', pingArgs);
+
+    let isReachable = false;
+
+    ping.on('close', (code) => {
+      // On Windows, ping returns 0 even for unreachable hosts
+      // So we need to check the output instead
+      console.log(`[Pre-scan] Ping process exited with code: ${code}`);
+      resolve(isReachable);
+    });
+
+    ping.stdout.on('data', (data) => {
+      const output = data.toString();
+      console.log(`[Pre-scan] Ping output: ${output.substring(0, 100)}...`);
+
+      // Check for successful ping responses
+      if (output.includes('TTL=') || output.includes('time=') || output.includes('bytes from')) {
+        isReachable = true;
+        console.log(`[Pre-scan] ✅ Host ${ip} is reachable!`);
+      }
+    });
+
+    ping.stderr.on('data', (data) => {
+      console.log(`[Pre-scan] Ping stderr: ${data.toString()}`);
+    });
+
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      try {
+        ping.kill();
+        console.log(`[Pre-scan] Ping timeout for ${ip}`);
+      } catch (e) { }
+      resolve(isReachable);
+    }, 5000);
+  });
+}
+
+function estimateHostCount(target) {
+  if (!target || typeof target !== 'string') return 1;
+
+  // CIDR notation (e.g., 10.208.192.0/24)
+  const cidrMatch = target.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+  if (cidrMatch) {
+    const prefixBits = parseInt(cidrMatch[2]);
+    return Math.pow(2, 32 - prefixBits) - 2; // Subtract network & broadcast
+  }
+
+  // IP range (e.g., 10.208.192.1-50)
+  const rangeMatch = target.match(/^(\d+\.\d+\.\d+\.\d+)-(\d+)$/);
+  if (rangeMatch) {
+    const start = parseInt(rangeMatch[1].split('.').pop());
+    const end = parseInt(rangeMatch[2]);
+    return Math.max(1, end - start + 1);
+  }
+
+  // Multiple IPs (e.g., 10.208.192.1,10.208.192.2)
+  if (target.includes(',')) {
+    return Math.max(1, target.split(',').length);
+  }
+
+  // Single host
+  return 1;
+}
+
 function extractHost(input) {
   if (!input || typeof input !== 'string') throw new Error('Invalid target');
   input = input.trim();
@@ -291,10 +417,20 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
   };
 }
 
-function runNmap(args, target, timeoutMs, scanId) {
+function runNmap(args, target, presetName, scanId) {
   return new Promise((resolve, reject) => {
+    // Validate preset exists
+    const preset = PRESETS[presetName];
+    if (!preset) {
+      return reject(new Error(`Unknown preset: ${presetName}`));
+    }
+
+    // Calculate dynamic timeout based on preset and target size
+    const timeoutMs = preset.calculateTimeout(target);
+
     const cmdArgs = [...args, target];
     console.log(`[${scanId}] Running: nmap ${cmdArgs.join(' ')}`);
+    console.log(`[${scanId}] Dynamic timeout: ${timeoutMs}ms (${timeoutMs / 1000}s) for preset: ${presetName}`);
 
     const n = spawn('nmap', cmdArgs, { stdio: ['ignore', 'pipe', 'pipe'], detached: false });
     let stdout = '', stderr = '', isTimeout = false;
@@ -578,16 +714,8 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
   }
 }
 
-// --- Scan Execution Functions ---
-async function runQuickScan(target, scanId) {
-  console.log(`[${scanId}] Starting quick scan for: ${target}`);
-  return await runNmap(PRESETS.quick_scan.args, target, PRESETS.quick_scan.timeoutMs, scanId);
-}
 
-async function runDeepScan(target, scanId) {
-  console.log(`[${scanId}] Starting deep scan for: ${target}`);
-  return await runNmap(PRESETS.deep_scan.args, target, PRESETS.deep_scan.timeoutMs, scanId);
-}
+
 
 
 
@@ -691,6 +819,25 @@ app.post('/scan', async (req, res) => {
       preset_used: preset
     });
 
+    //Check if it's a goody goody scan
+    console.log(`[${scanId}] Pre-scan reachability check...`);
+    const sampleIP = extractSampleIP(scanTarget);
+    const canPing = await checkNetworkReachable(sampleIP);
+
+    if (!canPing) {
+      await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+        status: 'failed',
+        finished_at: admin.firestore.FieldValue.serverTimestamp(),
+        error: 'Network unreachable - pre-scan check failed',
+        error_details: { sample_ip: sampleIP }
+      });
+      return res.status(400).json({
+        error: 'Network unreachable',
+        message: `Cannot reach ${sampleIP}. The network segment may be firewalled or offline.`,
+        suggestion: 'Try a different subnet or verify network connectivity'
+      });
+    }
+    console.log(`[${scanId}] Network is reachable, proceeding with scan...`);
     // Run scan asynchronously
     (async () => {
       let runResult;
@@ -703,9 +850,9 @@ app.post('/scan', async (req, res) => {
 
         // Use appropriate scan function based on preset
         if (preset === 'quick_scan') {
-          runResult = await runQuickScan(scanTarget, scanId);
+          runResult = await runNmap(PRESETS.quick_scan.args, scanTarget, 'quick_scan', scanId);
         } else if (preset === 'deep_scan') {
-          runResult = await runDeepScan(scanTarget, scanId);
+          runResult = await runNmap(PRESETS.deep_scan.args, scanTarget, 'deep_scan', scanId);
         }
 
         const stdout = runResult.stdout;
@@ -752,7 +899,7 @@ app.post('/scan', async (req, res) => {
       preset,
       target: scanTarget,
       is_network_scan: isNetworkScan,
-      estimatedTimeout: PRESETS[preset].timeoutMs / 1000 + ' seconds',
+      estimatedTimeout: PRESETS[preset].calculateTimeout(scanTarget) / 1000 + ' seconds',
       message: `Scan started. Use GET /scan/${scanId} to check status.`
     });
 
@@ -859,7 +1006,7 @@ app.post('/scan/deep-multiple', async (req, res) => {
         });
 
         console.log(`[${scanId}] Starting deep scan for: ${targetHosts}`);
-        runResult = await runDeepScan(targetHosts, scanId);
+        runResult = await runNmap(PRESETS.deep_scan.args, targetHosts, 'deep_scan', scanId);
 
         const stdout = runResult.stdout;
         console.log(`[${scanId}] Deep scan completed`);
