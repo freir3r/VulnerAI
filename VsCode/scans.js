@@ -138,7 +138,7 @@ async function loadScans() {
   try {
     const userId = getCurrentUserId();
     const response = await nmapAPI.getUserScans(userId);
-    
+
     if (response && response.scans) {
       // Converter dados da Firebase para o formato esperado pela aplicação
       const convertedScans = response.scans.map(scan => ({
@@ -150,13 +150,22 @@ async function loadScans() {
         preset: scan.preset_used || scan.scan_type,
         proto: 'TCP', // Default, pode ser ajustado se a API fornecer
         startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : Date.now(),
-        status: scan.status === 'complete' ? 'Completed' : 
-                scan.status === 'ongoing' ? 'ongoing' : 'failed',
+        status: scan.status === 'complete' ? 'Completed' :
+          scan.status === 'ongoing' ? 'ongoing' : 'failed',
         apiStatus: scan,
-        openPorts: [],
+
+        // QUICK SCAN SPECIFIC DATA
+        activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
+        totalHosts: scan.summary?.total_hosts || 0,
+        openPorts: [], // Will be populated from ScanResults
+        totalPorts: scan.summary?.open_ports_total || 0,
+        deviceTypes: scan.summary?.device_types || [],
+        scanDuration: scan.summary?.scan_duration || '',
+
         cveList: [],
         cves: scan.summary?.vulnerabilities_total || 0,
         user_id: scan.user_id,
+
         // Campos adicionais da Firebase
         summary: scan.summary,
         is_network_scan: scan.is_network_scan,
@@ -164,17 +173,17 @@ async function loadScans() {
         finished_at: scan.finished_at,
         scan_mode: scan.target_ids ? (scan.target_ids.length > 1 ? 'deep-multiple' : 'deep-single') : 'normal'
       }));
-      
+
       return convertedScans;
     }
     return [];
   } catch (error) {
     console.error('Error loading scans from Firebase:', error);
     // Fallback para localStorage em caso de erro
-    try { 
-      return JSON.parse(localStorage.getItem(LS_SCANS) || "[]"); 
-    } catch { 
-      return []; 
+    try {
+      return JSON.parse(localStorage.getItem(LS_SCANS) || "[]");
+    } catch {
+      return [];
     }
   }
 }
@@ -208,12 +217,23 @@ function startScanPolling(scanId) {
   const pollInterval = setInterval(async () => {
     try {
       const status = await nmapAPI.getScanStatus(scanId);
+      console.log("SCAN STATUS RESPONSE:", status); // Keep this for debugging
       updateScanStatus(scanId, status);
 
+      // ✅ Check if scan completed or failed
       if (status.scan.status === 'complete' || status.scan.status === 'failed') {
         stopScanPolling(scanId);
-        renderScanResultsPage();
+
+        // Hide loading screen
+        document.getElementById('scan-loading').style.display = 'none';
+
+        // Show results section
+        document.getElementById('scan-results-content').style.display = 'block';
+
+        // ✅ PASS THE API STATUS TO RENDER FUNCTION
+        renderScanResultsPageWithData(status);
       }
+
     } catch (error) {
       console.error(`Polling error for scan ${scanId}:`, error);
       stopScanPolling(scanId);
@@ -223,6 +243,7 @@ function startScanPolling(scanId) {
   activePolling.set(scanId, pollInterval);
 }
 
+
 function stopScanPolling(scanId) {
   if (activePolling.has(scanId)) {
     clearInterval(activePolling.get(scanId));
@@ -230,7 +251,127 @@ function stopScanPolling(scanId) {
   }
 }
 
+// NEW FUNCTION: Render scan results with fresh API data
+function renderScanResultsPageWithData(apiStatus) {
+  console.log('Rendering with fresh API data:', apiStatus);
+  
+  // Create model directly from API response
+  const model = createModelFromApiResponse(apiStatus);
+  
+  // Update the UI immediately with fresh data
+  updateScanResultsUI(model);
+}
+
+// NEW FUNCTION: Create model directly from API response
+function createModelFromApiResponse(apiStatus) {
+  console.log('Creating model from API response:', apiStatus);
+
+  if (!apiStatus || !apiStatus.scan) {
+    return getFallbackModel();
+  }
+
+  if (apiStatus.scan.status === 'ongoing') {
+    return {
+      targetValue: apiStatus.scan.target || 'Unknown Target',
+      type: apiStatus.scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
+      activeHosts: '...',
+      totalHosts: '...',
+      openPorts: 0,
+      totalPorts: '...',
+      deviceTypes: [],
+      scanDuration: '',
+      cves: 0,
+      hosts: [],
+      cveList: [],
+      status: 'ongoing',
+      message: 'Scan in progress...'
+    };
+  }
+
+  if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
+    const hosts = apiStatus.ScanResults;
+    console.log('Processing fresh ScanResults:', hosts);
+    
+    // For quick scans, extract host information with proper field mapping
+    const hostDetails = hosts.map((host, index) => {
+      return {
+        id: host.id || `host${index + 1}`,
+        ip: host.host, // This is the correct field from your API
+        hostname: host.hostname || 'N/A',
+        mac_address: host.mac_address || 'N/A',
+        vendor: host.vendor || 'Unknown',
+        device_type: host.device_type || 'Unknown',
+        host_status: host.host_status || 'unknown',
+        ports: host.ports || [],
+        open_ports_count: host.open_ports_count || 0
+      };
+    });
+
+    const openPorts = hosts.flatMap(host =>
+      (host.ports || []).filter(p => p.state === 'open').map(p => p.port)
+    );
+
+    const cveList = (apiStatus.foundVulns || []).map(vuln => ({
+      id: vuln.CVE || `VULN-${uid()}`,
+      title: vuln.title || `Vulnerability in ${vuln.service || 'unknown'}`,
+      cvss: parseFloat(vuln.risk_level) || 0.0,
+      severity: cvssToSeverity(parseFloat(vuln.risk_level) || 0.0)
+    }));
+
+    const result = {
+      targetValue: apiStatus.scan.target,
+      type: apiStatus.scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
+      activeHosts: apiStatus.scan.summary?.active_hosts || hosts.length,
+      totalHosts: apiStatus.scan.summary?.total_hosts || hosts.length,
+      openPorts: openPorts.length,
+      totalPorts: apiStatus.scan.summary?.open_ports_total || openPorts.length,
+      deviceTypes: apiStatus.scan.summary?.device_types || [...new Set(hosts.map(h => h.device_type))],
+      scanDuration: apiStatus.scan.summary?.scan_duration || '',
+      cves: cveList.length,
+      hosts: hostDetails,
+      cveList: cveList,
+      status: 'complete',
+      isQuickScan: apiStatus.scan.scan_type === 'quick_scan',
+      scanSummary: apiStatus.scan.summary,
+      rawResults: apiStatus.ScanResults
+    };
+
+    console.log('Fresh model result:', result);
+    return result;
+  }
+
+  return getFallbackModel();
+}
+
+// Helper function for fallback data
+function getFallbackModel() {
+  return {
+    targetValue: "scanme.nmap.org",
+    type: "quick",
+    activeHosts: 1,
+    openPorts: 3,
+    totalPorts: 50,
+    cves: 4,
+    hosts: [{
+      id: "host1", name: "Host 1",
+      ports: [
+        { port: 5432, service: "PostgreSQL", status: "open" },
+        { port: 8080, service: "HTTP Proxy", status: "open" },
+        { port: 6379, service: "Redis", status: "open" },
+      ]
+    }],
+    cveList: [
+      { id: "CVE-2019-8874", title: "Demo vulnerability on port 5432", cvss: 0.7, severity: "TRIVIAL" },
+      { id: "CVE-2016-4992", title: "Demo vulnerability on port 5432", cvss: 8.1, severity: "HIGH" },
+      { id: "CVE-2021-8031", title: "Demo vulnerability on port 6379", cvss: 0.0, severity: "TRIVIAL" },
+      { id: "CVE-2021-5054", title: "Demo vulnerability on port 5432", cvss: 9.8, severity: "CRITICAL" },
+    ]
+  };
+}
+
 function updateScanStatus(scanId, apiStatus) {
+  console.log('Updating scan status for:', scanId, apiStatus);
+  
   // Atualizar estado local baseado na resposta da API
   const scanIndex = state.scans.findIndex(s => s.id === scanId);
 
@@ -240,12 +381,17 @@ function updateScanStatus(scanId, apiStatus) {
                   apiStatus.scan.status === 'ongoing' ? 'ongoing' : 'failed';
     scan.apiStatus = apiStatus;
 
+    console.log('Updated scan with API status:', scan);
+
     if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
       processCompletedScan(scan, apiStatus);
       
       // Switch from loading to results view
       document.getElementById('scan-loading').style.display = 'none';
       document.getElementById('scan-results-content').style.display = 'block';
+
+      // ✅ RENDER WITH FRESH API DATA
+      renderScanResultsPageWithData(apiStatus);
     }
 
     if (apiStatus.scan.status === 'failed') {
@@ -262,16 +408,30 @@ function updateScanStatus(scanId, apiStatus) {
 
     // Atualizar lista local
     saveScans(state.scans);
-    renderScanResultsPage();
+    
+  } else {
+    console.warn('Scan not found in state:', scanId);
+    // If scan completed but not found in state, render directly with API data
+    if (apiStatus.scan.status === 'complete') {
+      renderScanResultsPageWithData(apiStatus);
+    }
   }
 }
-
 function processCompletedScan(scan, apiStatus) {
+  console.log('Processing completed scan:', scan.id, 'with API data:', apiStatus);
+  
   if (apiStatus.ScanResults && apiStatus.ScanResults.length > 0) {
     const hosts = apiStatus.ScanResults;
+    
+    // Update scan with real data from API
     scan.openPorts = [];
     scan.cveList = [];
+    scan.activeHosts = apiStatus.scan.summary?.active_hosts || hosts.length;
+    scan.totalHosts = apiStatus.scan.summary?.total_hosts || hosts.length;
+    scan.deviceTypes = apiStatus.scan.summary?.device_types || [];
+    scan.scanDuration = apiStatus.scan.summary?.scan_duration || '';
 
+    // Extract open ports from all hosts
     hosts.forEach(host => {
       if (host.ports && Array.isArray(host.ports)) {
         host.ports.forEach(port => {
@@ -294,6 +454,8 @@ function processCompletedScan(scan, apiStatus) {
     }
 
     scan.cves = scan.cveList.length;
+    
+    console.log('Scan after processing:', scan);
   }
 }
 
@@ -343,7 +505,7 @@ function populateTargetSelection(multiple = false) {
   if (!container) return;
 
   const targets = state.targets || [];
-  
+
   if (targets.length === 0) {
     container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">No targets available. Please add targets first.</div>';
     return;
@@ -366,21 +528,27 @@ function populateTargetSelection(multiple = false) {
 }
 
 function showActiveScanView(scanData = null) {
-  document.getElementById('view-scans-history').classList.remove('active');
-  document.getElementById('view-active-scan').style.display = 'block';
+  const historyView = document.getElementById('view-scans-history');
+  const activeView = document.getElementById('view-active-scan');
+  const loading = document.getElementById('scan-loading');
+  const results = document.getElementById('scan-results-content');
+
+  // Hide history view and show active scan section
+  historyView.classList.remove('active');
+  historyView.style.display = 'none';
+  activeView.style.display = 'block';
   document.getElementById('page-title').textContent = 'Active Scan';
-  
+
+  // If scanData exists -> show loading screen
   if (scanData) {
-    document.getElementById('scan-loading').style.display = 'block';
-    document.getElementById('scan-results-content').style.display = 'none';
-    document.getElementById('loading-target').textContent = scanData.targetValue || scanData.scan_name || 'Multiple Targets';
+    loading.style.display = 'block';
+    results.style.display = 'none';
+    document.getElementById('loading-target').textContent =
+      scanData.targetValue || scanData.scan_name || 'Multiple Targets';
     animateProgress();
-  } else {
-    document.getElementById('scan-loading').style.display = 'none';
-    document.getElementById('scan-results-content').style.display = 'block';
-    renderScanResultsPage();
   }
 }
+
 
 async function showScansHistoryView() {
   document.getElementById('view-active-scan').style.display = 'none';
@@ -400,7 +568,7 @@ function animateProgress() {
     { width: '85%', text: 'Checking vulnerabilities...' },
     { width: '95%', text: 'Finalizing results...' }
   ];
-  
+
   let currentStep = 0;
   const interval = setInterval(() => {
     if (currentStep < steps.length) {
@@ -418,31 +586,31 @@ async function renderScansHistory() {
   const scansList = document.getElementById('scans-list');
   const scansEmpty = document.getElementById('scans-empty');
   const scansCount = document.getElementById('scans-count');
-  
+
   // Carregar scans da Firebase
   state.scans = await loadScans();
-  
+
   scansCount.textContent = `${state.scans.length} scan${state.scans.length !== 1 ? 's' : ''}`;
-  
+
   if (state.scans.length === 0) {
     scansList.style.display = 'none';
     scansEmpty.style.display = 'block';
     return;
   }
-  
+
   scansList.style.display = 'grid';
   scansEmpty.style.display = 'none';
-  
+
   scansList.innerHTML = state.scans.map(scan => {
     const startDate = new Date(scan.startedAt);
-    const statusClass = scan.status === 'ongoing' ? 'ongoing' : 
-                       scan.status === 'Completed' ? 'completed' : 'failed';
-    
+    const statusClass = scan.status === 'ongoing' ? 'ongoing' :
+      scan.status === 'Completed' ? 'completed' : 'failed';
+
     // Determinar o tipo de scan para display
     let scanTypeDisplay = scan.type === 'deep' ? 'Deep Scan' : 'Quick Scan';
     if (scan.scan_mode === 'deep-single') scanTypeDisplay = 'Deep Single';
     if (scan.scan_mode === 'deep-multiple') scanTypeDisplay = `Deep Multiple (${scan.targetIds?.length || 0})`;
-    
+
     return `
     <div class="scan-item" data-scan-id="${scan.id}">
       <div class="scan-info">
@@ -553,10 +721,10 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       id: result.scanId,
       targetId: scanMode === 'deep-single' ? targetId : null,
       targetIds: scanMode === 'deep-multiple' ? targetIds : [],
-      targetValue: targetValue || 
-                  (scanMode === 'deep-multiple' ? result.targets?.map(t => t.host).join(', ') : null) || 
-                  result.target || 
-                  'Multiple Targets',
+      targetValue: targetValue ||
+        (scanMode === 'deep-multiple' ? result.targets?.map(t => t.host).join(', ') : null) ||
+        result.target ||
+        'Multiple Targets',
       type: scanMode.includes('deep') ? 'deep' : type,
       preset: scanMode.includes('deep') ? 'deep_scan' : (type === 'deep' ? 'deep_scan' : 'quick_scan'),
       proto,
@@ -578,20 +746,20 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
     // Hide modal and show active scan view
     hideNewScanModal();
     showActiveScanView(scan);
-    
+
     startScanPolling(result.scanId);
     return scan;
 
   } catch (error) {
     console.error('Failed to start scan:', error);
-    
+
     // Fallback para demo mode
     const userId = getCurrentUserId();
     const openPorts = simulateOpenPorts(proto);
     const cveList = simulateCVEs(openPorts);
-    
+
     const scan = {
-      id: uid(), 
+      id: uid(),
       targetId: scanMode === 'deep-single' ? targetId : null,
       targetIds: scanMode === 'deep-multiple' ? targetIds : [],
       targetValue: targetValue || 'Demo Target',
@@ -607,14 +775,14 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       scan_name: scanName || `Demo ${scanMode} Scan`,
       scan_mode: scanMode
     };
-    
+
     state.scans.unshift(scan);
     saveScans(state.scans);
 
     // Hide modal and show active scan view
     hideNewScanModal();
     showActiveScanView(scan);
-    
+
     return scan;
   }
 }
@@ -710,15 +878,19 @@ async function renderScanResultsPage() {
 
 function createModelFromApiStatus(scan) {
   const apiStatus = scan.apiStatus;
+  console.log('API Status for model creation:', apiStatus); // Debug log
 
   if (!apiStatus || !apiStatus.scan) {
     return {
       targetValue: scan.targetValue,
       type: scan.type,
-      activeHosts: 0,
-      openPorts: 0,
-      totalPorts: 0,
-      cves: 0,
+      activeHosts: scan.activeHosts || 0,
+      totalHosts: scan.totalHosts || 0,
+      openPorts: scan.openPorts || 0,
+      totalPorts: scan.totalPorts || 0,
+      deviceTypes: scan.deviceTypes || [],
+      scanDuration: scan.scanDuration || '',
+      cves: scan.cves || 0,
       hosts: [],
       cveList: [],
       status: scan.status
@@ -730,8 +902,11 @@ function createModelFromApiStatus(scan) {
       targetValue: scan.targetValue,
       type: scan.type,
       activeHosts: '...',
+      totalHosts: '...',
       openPorts: 0,
       totalPorts: '...',
+      deviceTypes: [],
+      scanDuration: '',
       cves: 0,
       hosts: [],
       cveList: [],
@@ -742,6 +917,24 @@ function createModelFromApiStatus(scan) {
 
   if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
     const hosts = apiStatus.ScanResults;
+    console.log('Processing ScanResults:', hosts); // Debug log
+
+    // For quick scans, extract host information with proper field mapping
+    const hostDetails = hosts.map((host, index) => {
+      console.log('Processing host:', host); // Debug each host
+      return {
+        id: host.id || `host${index + 1}`,
+        ip: host.host, // This is the correct field from your API
+        hostname: host.hostname || 'N/A',
+        mac_address: host.mac_address || 'N/A',
+        vendor: host.vendor || 'Unknown',
+        device_type: host.device_type || 'Unknown',
+        host_status: host.host_status || 'unknown',
+        ports: host.ports || [],
+        open_ports_count: host.open_ports_count || 0
+      };
+    });
+
     const openPorts = hosts.flatMap(host =>
       (host.ports || []).filter(p => p.state === 'open').map(p => p.port)
     );
@@ -753,33 +946,37 @@ function createModelFromApiStatus(scan) {
       severity: cvssToSeverity(parseFloat(vuln.risk_level) || 0.0)
     }));
 
-    return {
+    const result = {
       targetValue: scan.targetValue,
       type: scan.type,
-      activeHosts: hosts.length,
+      activeHosts: apiStatus.scan.summary?.active_hosts || hosts.length,
+      totalHosts: apiStatus.scan.summary?.total_hosts || hosts.length,
       openPorts: openPorts.length,
-      totalPorts: hosts.reduce((sum, host) => sum + (host.ports?.length || 0), 0),
+      totalPorts: apiStatus.scan.summary?.open_ports_total || openPorts.length,
+      deviceTypes: apiStatus.scan.summary?.device_types || [...new Set(hosts.map(h => h.device_type))],
+      scanDuration: apiStatus.scan.summary?.scan_duration || '',
       cves: cveList.length,
-      hosts: hosts.map((host, index) => ({
-        id: `host${index + 1}`,
-        name: host.hostname || `Host ${index + 1}`,
-        ports: (host.ports || []).map(port => ({
-          port: port.port,
-          service: port.service?.name || '',
-          status: port.state
-        }))
-      })),
+      hosts: hostDetails,
       cveList: cveList,
-      status: 'complete'
+      status: 'complete',
+      isQuickScan: scan.type === 'quick',
+      scanSummary: apiStatus.scan.summary,
+      rawResults: apiStatus.ScanResults
     };
+
+    console.log('Final model result:', result); // Debug final model
+    return result;
   }
 
   return {
     targetValue: scan.targetValue,
     type: scan.type,
     activeHosts: 0,
+    totalHosts: 0,
     openPorts: 0,
     totalPorts: 0,
+    deviceTypes: [],
+    scanDuration: '',
     cves: 0,
     hosts: [],
     cveList: [],
@@ -791,28 +988,152 @@ function updateScanResultsUI(model) {
   // Update header
   document.getElementById("sr-target").textContent = model.targetValue;
   document.getElementById("sr-type").textContent = (model.type === "deep" ? "Deep Scan" : "Quick Scan");
-  
-  // Update summary
-  document.getElementById("sr-active-hosts").textContent = model.activeHosts;
-  document.getElementById("sr-cves").textContent = model.cves;
+
+  // Update summary - show different info for quick vs deep scans
+  if (model.type === "quick") {
+    document.getElementById("sr-active-hosts").textContent = model.activeHosts;
+    document.getElementById("sr-cves").textContent = model.totalHosts; // Show total hosts for quick scans
+    document.getElementById("sr-ports-text").textContent = `${model.openPorts} ports open`;
+
+    // Add quick scan specific info
+    const quickScanInfo = document.getElementById("quick-scan-info") || createQuickScanInfoSection();
+    quickScanInfo.innerHTML = `
+      <div class="quick-scan-stats">
+        <div class="stat">
+          <span class="stat-value">${model.totalHosts}</span>
+          <span class="stat-label">Total Hosts</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">${model.activeHosts}</span>
+          <span class="stat-label">Active Hosts</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">${model.openPorts}</span>
+          <span class="stat-label">Open Ports</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">${model.scanDuration}</span>
+          <span class="stat-label">Duration</span>
+        </div>
+      </div>
+    `;
+  } else {
+    // Deep scan info (your existing code)
+    document.getElementById("sr-active-hosts").textContent = model.activeHosts;
+    document.getElementById("sr-cves").textContent = model.cves;
+    document.getElementById("sr-ports-text").textContent = `${model.openPorts}/${model.totalPorts}`;
+  }
 
   // Update gauge
   if (model.status === 'ongoing') {
     document.getElementById("sr-ports-text").textContent = "Scanning...";
     drawGauge(0.1);
+  } else if (model.type === "quick") {
+    // For quick scans, show host discovery progress
+    const discoveryRate = model.totalHosts > 0 ? model.activeHosts / model.totalHosts : 0;
+    drawGauge(discoveryRate);
   } else {
     document.getElementById("sr-ports-text").textContent = `${model.openPorts}/${model.totalPorts}`;
     drawGauge(model.totalPorts ? model.openPorts / model.totalPorts : 0);
   }
 
-  // Update ports table
-  fillPortsTable(model.hosts[0]);
-  
-  // Update vulnerabilities table
-  renderCVETable(model.cveList);
-  
+  // Update tables based on scan type
+  if (model.type === "quick") {
+    fillQuickScanHostsTable(model.hosts);
+  } else {
+    fillPortsTable(model.hosts[0]);
+  }
+
+  // Update vulnerabilities table (only for deep scans)
+  if (model.type === "deep") {
+    renderCVETable(model.cveList);
+  } else {
+    const vulnContainer = document.getElementById("vuln-table-container");
+    if (vulnContainer) {
+      vulnContainer.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">Vulnerability scanning not available for quick scans</div>';
+    }
+  }
+
   // Update clear button
   updateClearButtonLabel();
+}
+
+// NEW FUNCTION: Create quick scan info section
+function createQuickScanInfoSection() {
+  const section = document.createElement('div');
+  section.id = 'quick-scan-info';
+  section.className = 'quick-scan-info';
+
+  const existingSection = document.querySelector('.scan-results-header');
+  if (existingSection) {
+    existingSection.appendChild(section);
+  }
+
+  return section;
+}
+
+// NEW FUNCTION: Fill quick scan hosts table
+// FIXED FUNCTION: Fill quick scan hosts table
+// FIXED FUNCTION: Fill quick scan hosts table
+function fillQuickScanHostsTable(hosts) {
+  const container = document.getElementById("ports-table-container");
+  if (!container) return;
+
+  console.log('Filling quick scan hosts table with:', hosts); // Debug log
+
+  if (!hosts || hosts.length === 0) {
+    container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">No hosts discovered</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="quick-scan-results">
+      <h3>Discovered Hosts (${hosts.length})</h3>
+      <table class="hosts-table">
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>Hostname</th>
+            <th>MAC Address</th>
+            <th>Vendor</th>
+            <th>Device Type</th>
+            <th>Status</th>
+            <th>Open Ports</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hosts.map(host => {
+    console.log('Rendering host row:', host); // Debug each host row
+
+    // Use the actual field names from your API response
+    const ip = host.ip || host.host || 'N/A';
+    const hostname = host.hostname || 'N/A';
+    const mac = host.mac_address || 'N/A';
+    const vendor = host.vendor || 'Unknown';
+    const deviceType = host.device_type || 'Unknown';
+    const status = host.host_status || 'unknown';
+    const openPorts = host.open_ports_count || 0;
+
+    const statusClass = `status-${status}`;
+    const statusText = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+
+    return `
+            <tr>
+              <td><strong>${ip}</strong></td>
+              <td>${hostname}</td>
+              <td><code>${mac}</code></td>
+              <td>${vendor}</td>
+              <td><span class="device-type">${deviceType}</span></td>
+              <td><span class="${statusClass}">${statusText}</span></td>
+              <td>${openPorts}</td>
+            </tr>
+          `}).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  console.log('Quick scan table rendered successfully'); // Debug log
 }
 
 function fillPortsTable(host) {
@@ -835,16 +1156,16 @@ function fillPortsTable(host) {
       </thead>
       <tbody>
         ${host.ports.map(port => {
-          const statusClass = `status-${port.status}`;
-          const statusText = port.status ? port.status.charAt(0).toUpperCase() + port.status.slice(1) : 'Unknown';
-          return `
+    const statusClass = `status-${port.status}`;
+    const statusText = port.status ? port.status.charAt(0).toUpperCase() + port.status.slice(1) : 'Unknown';
+    return `
             <tr>
               <td>${port.port}</td>
               <td>${port.service || ""}</td>
               <td><span class="${statusClass}">${statusText}</span></td>
             </tr>
           `;
-        }).join('')}
+  }).join('')}
       </tbody>
     </table>
   `;
@@ -871,10 +1192,10 @@ function renderCVETable(cves) {
       </thead>
       <tbody>
         ${cves.map(vuln => {
-          const sev = (vuln.severity || cvssToSeverity(vuln.cvss || 0)).toUpperCase();
-          const sevCls = `sev-${sev}`;
-          const score = (vuln.cvss ?? 0).toFixed(1);
-          return `
+    const sev = (vuln.severity || cvssToSeverity(vuln.cvss || 0)).toUpperCase();
+    const sevCls = `sev-${sev}`;
+    const score = (vuln.cvss ?? 0).toFixed(1);
+    return `
             <tr>
               <td><strong>${vuln.id}</strong></td>
               <td>${vuln.title}</td>
@@ -882,7 +1203,7 @@ function renderCVETable(cves) {
               <td><span class="${sevCls}">${sev}</span></td>
             </tr>
           `;
-        }).join('')}
+  }).join('')}
       </tbody>
     </table>
   `;
@@ -934,7 +1255,7 @@ function updateStartEnabled() {
   const tos = document.getElementById("ns-tos");
   const startBtn = document.getElementById("ns-start");
   const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
-  
+
   let hasValidInput = false;
 
   switch (scanMode) {
@@ -988,7 +1309,7 @@ async function init() {
   const newScanModal = document.getElementById('modal-newscan');
   document.getElementById('btn-new-scan')?.addEventListener('click', showNewScanModal);
   document.getElementById('empty-new-scan')?.addEventListener('click', showNewScanModal);
-  
+
   newScanModal?.addEventListener('click', (e) => {
     if (e.target.hasAttribute('data-close') || e.target.classList.contains('close') || e.target.classList.contains('backdrop')) {
       hideNewScanModal();
@@ -1083,7 +1404,7 @@ async function init() {
         }
         targetId = chosenId;
         break;
-      
+
       case 'deep-single':
         const selectedSingle = document.querySelector('input[name="ns-selected-target"]:checked');
         if (!selectedSingle) return alert('Please select a target');
@@ -1091,12 +1412,12 @@ async function init() {
         const targetSingle = state.targets.find(t => t.id === targetId);
         targetValue = targetSingle?.value || '';
         break;
-      
+
       case 'deep-multiple':
         const selectedMultiple = document.querySelectorAll('input[name="ns-selected-targets"]:checked');
         if (selectedMultiple.length === 0) return alert('Please select at least one target');
         if (selectedMultiple.length > 10) return alert('Please select maximum 10 targets');
-        
+
         targetIds = Array.from(selectedMultiple).map(input => input.value);
         const targetsMultiple = state.targets.filter(t => targetIds.includes(t.id));
         targetValue = targetsMultiple.map(t => t.value).join(', ');
@@ -1111,14 +1432,14 @@ async function init() {
     startBtn.textContent = 'Starting Scan...';
 
     try {
-      await addScan({ 
-        targetValue, 
-        targetId, 
-        targetIds, 
-        type, 
-        proto, 
+      await addScan({
+        targetValue,
+        targetId,
+        targetIds,
+        type,
+        proto,
         scanMode,
-        scanName 
+        scanName
       });
     } catch (error) {
       alert('Scan started with fallback mode (API unavailable)');
@@ -1138,9 +1459,9 @@ async function init() {
   document.getElementById('scans-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
-    
+
     const scanId = btn.dataset.scanId;
-    
+
     if (btn.dataset.action === 'view-scan') {
       showActiveScanView();
       // Recarregar scans para garantir dados atualizados
@@ -1154,13 +1475,13 @@ async function init() {
         renderScanResultsPage();
       }
     }
-    
+
     if (btn.dataset.action === 'rescan') {
       // Recarregar scans para garantir dados atualizados
       state.scans = await loadScans();
       const scan = state.scans.find(s => s.id === scanId);
       if (!scan) return;
-      
+
       // Pre-fill new scan form with same target
       // Esta funcionalidade pode ser expandida para preencher automaticamente
       // baseado no tipo de scan anterior
@@ -1180,7 +1501,7 @@ async function init() {
   }
 
   document.getElementById("btn-clear-trivial")?.addEventListener("click", handleClearTrivial);
-  
+
   document.addEventListener("dblclick", (e) => {
     const btn = e.target.closest("#btn-clear-trivial");
     if (btn) {

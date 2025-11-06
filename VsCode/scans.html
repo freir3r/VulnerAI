@@ -82,9 +82,19 @@
           <h2>New Scan</h2>
           
           <form id="newscan-form" novalidate>
+            <!-- Scan Mode Selection -->
             <div class="ns-field">
-              <label class="ns-label">Target</label>
+              <label class="ns-label">Scan Mode</label>
+              <div class="ns-radio-group">
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="normal" checked /> Normal Scan</label>
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="deep-single" /> Deep Single Target</label>
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="deep-multiple" /> Deep Multiple Targets</label>
+              </div>
+            </div>
 
+            <!-- Normal Scan Target Section -->
+            <div id="ns-target-section" class="ns-field">
+              <label class="ns-label">Target</label>
               <div class="host-select" style="margin-bottom:10px;">
                 <select id="ns-choose" class="input" aria-label="Choose saved target">
                   <option value="">Choose from saved targets…</option>
@@ -92,23 +102,39 @@
                 </select>
                 <span class="muted small" style="margin-left:8px;">or type a host/IP below</span>
               </div>
-
               <input id="ns-target" class="ns-input" placeholder="Host / IP Address (e.g. 8.8.8.8 or example.com)" />
             </div>
 
-            <div class="ns-row">
-              <div class="ns-col">
-                <div class="ns-label">Scan Type</div>
-                <label class="ns-radio"><input type="radio" name="ns-type" value="quick" checked /> Quick</label>
-                <label class="ns-radio"><input type="radio" name="ns-type" value="deep-single" /> Deep-Single</label>
-                <label class="ns-radio"><input type="radio" name="ns-type" value="deep-multiple" /> Deep-Multiple</label>
+            <!-- Target Selection Section (for deep scans) -->
+            <div id="ns-target-selection-section" class="ns-field" style="display: none;">
+              <label class="ns-label">Select Targets</label>
+              <div id="ns-target-selection-container" class="target-selection-container">
+                <!-- JS populates target selection -->
               </div>
+            </div>
 
-              <div class="ns-col">
-                <div class="ns-label">Protocol</div>
+            <!-- Scan Type Section -->
+            <div id="ns-scan-type-section" class="ns-field">
+              <div class="ns-label">Scan Type</div>
+              <div class="ns-radio-group">
+                <label class="ns-radio"><input type="radio" name="ns-type" value="quick" checked /> Quick Scan</label>
+                <label class="ns-radio"><input type="radio" name="ns-type" value="deep" /> Deep Scan</label>
+              </div>
+            </div>
+
+            <!-- Protocol Selection -->
+            <div class="ns-field">
+              <div class="ns-label">Protocol</div>
+              <div class="ns-radio-group">
                 <label class="ns-radio"><input type="radio" name="ns-proto" value="TCP" checked /> TCP</label>
                 <label class="ns-radio"><input type="radio" name="ns-proto" value="UDP" /> UDP</label>
               </div>
+            </div>
+
+            <!-- Scan Name -->
+            <div class="ns-field">
+              <label class="ns-label" for="ns-scan-name">Scan Name (Optional)</label>
+              <input id="ns-scan-name" class="ns-input" placeholder="e.g., Weekly Network Check" />
             </div>
 
             <label class="ns-check">
@@ -141,8 +167,8 @@
         <!-- Results Content -->
         <div id="scan-results-content" style="display: none;">
           <!-- Header Section -->
-          <div class="scan-header">
-            <h1>Active Scan</h1>
+          <div class="scan-results-header">
+            <h1>Scan Results</h1>
             <div class="scan-meta-grid">
               <div class="meta-group">
                 <div class="meta-label">Target</div>
@@ -153,11 +179,14 @@
                 <div class="meta-value" id="sr-type">Quick Scan</div>
               </div>
               <div class="meta-group">
-                <div class="meta-label">Summary</div>
-                <div class="meta-value"></div>
+                <div class="meta-label">Status</div>
+                <div class="meta-value" id="sr-status">Completed</div>
               </div>
             </div>
           </div>
+
+          <!-- Quick Scan Info Section -->
+          <div id="quick-scan-info"></div>
 
           <!-- Summary Section -->
           <div class="summary-section">
@@ -186,20 +215,20 @@
 
           <!-- Content Sections -->
           <div class="scan-content">
-            <!-- Host Section -->
+            <!-- Hosts/Ports Section -->
             <div class="section">
               <div class="section-header">
-                <h2>Host [Host 1]</h2>
+                <h2 id="section-title">Discovered Hosts</h2>
               </div>
               <div id="ports-table-container">
-                <!-- Ports table will be inserted here -->
+                <!-- Ports table or hosts table will be inserted here -->
               </div>
             </div>
 
             <!-- Vulnerabilities Section -->
             <div class="section">
               <div class="vuln-header">
-                <h2>Vulnerabilities (CVEs detected)</h2>
+                <h2>Vulnerabilities</h2>
                 <div class="vuln-actions">
                   <button class="btn-secondary" id="btn-show-history-results">Show History</button>
                   <button class="btn-secondary" id="scan-refresh">Refresh</button>

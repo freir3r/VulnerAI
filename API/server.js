@@ -633,7 +633,7 @@ async function storeScanResults(scanId, parsed, runResult, preset) {
 // --- Express API Setup ---
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
 // List available scan presets
 // List available scan presets
@@ -1137,24 +1137,28 @@ app.get('/scan/:scanId', async (req, res) => {
 
 // Get all scans for a user
 app.get('/scans/:userId', async (req, res) => {
+  const { userId } = req.params;
   try {
-    const userId = req.params.userId;
-    const scansSnap = await db.collection('Scan')
+    const snapshot = await db.collection('scans')
       .where('user_id', '==', userId)
-      .orderBy('submitted_at', 'desc')
-      .limit(50)
       .get();
 
-    const scans = scansSnap.docs.map(doc => ({
+    if (snapshot.empty) {
+      return res.json({ scans: [] });
+    }
+
+    const scans = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
 
     res.json({ scans });
-  } catch (err) {
-    res.status(500).json({ error: 'server error', details: err.message });
+  } catch (error) {
+    console.error('Error fetching scans:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 // Health check endpoint
 // Health check endpoint
