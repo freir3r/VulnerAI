@@ -84,20 +84,7 @@ const PRESETS = {
     args: [
       '-sn',                   // Host discovery only
       '-PR',                   // ARP discovery (this works!)
-      // REMOVE TCP probes since they're blocked:
-      // '-PS80,443,22',       // TCP SYN (blocked)
-      // '-PA80,443',          // TCP ACK (blocked)
-      // REMOVE UDP/SCTP:
-      // '-PU53,123,161',      // UDP (probably blocked)
-      // '-PY443,3389',        // SCTP (probably blocked)
-      '-T4',                   // Aggressive timing
-      '--min-hostgroup', '128',
-      '--max-hostgroup', '256',
-      '--min-parallelism', '10',
-      '--max-parallelism', '20',
-      '--host-timeout', '30s', // Much shorter since ARP is fast
-      '--max-retries', '1',
-      // No DNS needed for ARP scanning
+      '-n',
       '-oX', '-'
     ],
     calculateTimeout: function (target) {
