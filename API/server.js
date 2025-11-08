@@ -83,6 +83,8 @@ const PRESETS = {
   quick_scan: {
     args: [
       '-sn',                   // Host discovery only
+      '-PR',                   // ARP discovery (this works!)
+      '-n',
       '-n',
       '-PR',
       '-oX', '-'
