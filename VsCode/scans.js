@@ -98,7 +98,7 @@ function requireAuth() {
   return true;
 }
 
-// Função para obter o user_id atual
+// Function to get current user ID or email
 function getCurrentUserId() {
   try {
     const auth = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
@@ -113,7 +113,7 @@ const state = {
   targets: [],
   scans: [],
   lastResult: null,
-  selectedTargets: [] // Para deep-multiple scan
+  selectedTargets: [] // for deep multiple scans
 };
 
 /* ====== HELPERS ====== */
@@ -133,14 +133,18 @@ function saveTargets() {
   localStorage.setItem(LS_KEY, JSON.stringify(state.targets));
 }
 
-// MODIFICADO: Carregar scans da Firebase
+// load scans from Firebase
 async function loadScans() {
   try {
     const userId = getCurrentUserId();
+    console.log('Current User ID:', userId);
+    console.log('Auth Data:', localStorage.getItem(AUTH_KEY));
+
     const response = await nmapAPI.getUserScans(userId);
+    console.log('API Response:', response);
 
     if (response && response.scans) {
-      // Converter dados da Firebase para o formato esperado pela aplicação
+      // Convert API response to local model
       const convertedScans = response.scans.map(scan => ({
         id: scan.id,
         targetValue: scan.target,
@@ -148,7 +152,7 @@ async function loadScans() {
         targetIds: scan.target_ids || [],
         type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
         preset: scan.preset_used || scan.scan_type,
-        proto: 'TCP', // Default, pode ser ajustado se a API fornecer
+        proto: 'TCP', // Default, can be adjusted if API provides this info
         startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : Date.now(),
         status: scan.status === 'complete' ? 'Completed' :
           scan.status === 'ongoing' ? 'ongoing' : 'failed',
@@ -166,7 +170,7 @@ async function loadScans() {
         cves: scan.summary?.vulnerabilities_total || 0,
         user_id: scan.user_id,
 
-        // Campos adicionais da Firebase
+        // additional fields
         summary: scan.summary,
         is_network_scan: scan.is_network_scan,
         scan_name: scan.scan_name,
@@ -178,8 +182,9 @@ async function loadScans() {
     }
     return [];
   } catch (error) {
+    console.error('Firebase error, falling back to localStorage');
     console.error('Error loading scans from Firebase:', error);
-    // Fallback para localStorage em caso de erro
+    // Fallback to localStorage in case of error
     try {
       return JSON.parse(localStorage.getItem(LS_SCANS) || "[]");
     } catch {
@@ -188,7 +193,7 @@ async function loadScans() {
   }
 }
 
-// MODIFICADO: Salvar scan localmente (apenas como cache)
+// save scans to localStorage
 function saveScans(arr) {
   try {
     localStorage.setItem(LS_SCANS, JSON.stringify(arr));
@@ -217,10 +222,10 @@ function startScanPolling(scanId) {
   const pollInterval = setInterval(async () => {
     try {
       const status = await nmapAPI.getScanStatus(scanId);
-      console.log("SCAN STATUS RESPONSE:", status); // Keep this for debugging
+      console.log("SCAN STATUS RESPONSE:", status);
       updateScanStatus(scanId, status);
 
-      // ✅ Check if scan completed or failed
+      // Check if scan completed or failed
       if (status.scan.status === 'complete' || status.scan.status === 'failed') {
         stopScanPolling(scanId);
 
@@ -230,7 +235,7 @@ function startScanPolling(scanId) {
         // Show results section
         document.getElementById('scan-results-content').style.display = 'block';
 
-        // ✅ PASS THE API STATUS TO RENDER FUNCTION
+        // PASS THE API STATUS TO RENDER FUNCTION
         renderScanResultsPageWithData(status);
       }
 
@@ -254,10 +259,10 @@ function stopScanPolling(scanId) {
 // NEW FUNCTION: Render scan results with fresh API data
 function renderScanResultsPageWithData(apiStatus) {
   console.log('Rendering with fresh API data:', apiStatus);
-  
+
   // Create model directly from API response
   const model = createModelFromApiResponse(apiStatus);
-  
+
   // Update the UI immediately with fresh data
   updateScanResultsUI(model);
 }
@@ -291,7 +296,7 @@ function createModelFromApiResponse(apiStatus) {
   if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
     const hosts = apiStatus.ScanResults;
     console.log('Processing fresh ScanResults:', hosts);
-    
+
     // For quick scans, extract host information with proper field mapping
     const hostDetails = hosts.map((host, index) => {
       return {
@@ -371,26 +376,26 @@ function getFallbackModel() {
 
 function updateScanStatus(scanId, apiStatus) {
   console.log('Updating scan status for:', scanId, apiStatus);
-  
-  // Atualizar estado local baseado na resposta da API
+
+  // update local state 
   const scanIndex = state.scans.findIndex(s => s.id === scanId);
 
   if (scanIndex !== -1) {
     const scan = state.scans[scanIndex];
-    scan.status = apiStatus.scan.status === 'complete' ? 'Completed' : 
-                  apiStatus.scan.status === 'ongoing' ? 'ongoing' : 'failed';
+    scan.status = apiStatus.scan.status === 'complete' ? 'Completed' :
+      apiStatus.scan.status === 'ongoing' ? 'ongoing' : 'failed';
     scan.apiStatus = apiStatus;
 
     console.log('Updated scan with API status:', scan);
 
     if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
       processCompletedScan(scan, apiStatus);
-      
+
       // Switch from loading to results view
       document.getElementById('scan-loading').style.display = 'none';
       document.getElementById('scan-results-content').style.display = 'block';
 
-      // ✅ RENDER WITH FRESH API DATA
+      // RENDER WITH FRESH API DATA
       renderScanResultsPageWithData(apiStatus);
     }
 
@@ -406,9 +411,9 @@ function updateScanStatus(scanId, apiStatus) {
       `;
     }
 
-    // Atualizar lista local
+    // Persist updated scans
     saveScans(state.scans);
-    
+
   } else {
     console.warn('Scan not found in state:', scanId);
     // If scan completed but not found in state, render directly with API data
@@ -419,10 +424,10 @@ function updateScanStatus(scanId, apiStatus) {
 }
 function processCompletedScan(scan, apiStatus) {
   console.log('Processing completed scan:', scan.id, 'with API data:', apiStatus);
-  
+
   if (apiStatus.ScanResults && apiStatus.ScanResults.length > 0) {
     const hosts = apiStatus.ScanResults;
-    
+
     // Update scan with real data from API
     scan.openPorts = [];
     scan.cveList = [];
@@ -454,7 +459,7 @@ function processCompletedScan(scan, apiStatus) {
     }
 
     scan.cves = scan.cveList.length;
-    
+
     console.log('Scan after processing:', scan);
   }
 }
@@ -469,14 +474,14 @@ function hideNewScanModal() {
   document.getElementById('modal-newscan').setAttribute('aria-hidden', 'true');
 }
 
-// NOVA FUNÇÃO: Atualizar UI baseado no modo de scan selecionado
+// update UI based on selected scan mode
 function updateScanModeUI() {
   const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
   const targetSection = document.getElementById('ns-target-section');
   const targetSelectionSection = document.getElementById('ns-target-selection-section');
   const scanTypeSection = document.getElementById('ns-scan-type-section');
 
-  // Esconder todas as seções primeiro
+  // Hide all sections initially
   if (targetSection) targetSection.style.display = 'none';
   if (targetSelectionSection) targetSelectionSection.style.display = 'none';
   if (scanTypeSection) scanTypeSection.style.display = 'none';
@@ -499,7 +504,7 @@ function updateScanModeUI() {
   updateStartEnabled();
 }
 
-// NOVA FUNÇÃO: Popular seleção de targets
+// populate target selection list
 function populateTargetSelection(multiple = false) {
   const container = document.getElementById('ns-target-selection-container');
   if (!container) return;
@@ -587,7 +592,7 @@ async function renderScansHistory() {
   const scansEmpty = document.getElementById('scans-empty');
   const scansCount = document.getElementById('scans-count');
 
-  // Carregar scans da Firebase
+  // Load scans from API
   state.scans = await loadScans();
 
   scansCount.textContent = `${state.scans.length} scan${state.scans.length !== 1 ? 's' : ''}`;
@@ -606,7 +611,7 @@ async function renderScansHistory() {
     const statusClass = scan.status === 'ongoing' ? 'ongoing' :
       scan.status === 'Completed' ? 'completed' : 'failed';
 
-    // Determinar o tipo de scan para display
+    // Determine scan type display
     let scanTypeDisplay = scan.type === 'deep' ? 'Deep Scan' : 'Quick Scan';
     if (scan.scan_mode === 'deep-single') scanTypeDisplay = 'Deep Single';
     if (scan.scan_mode === 'deep-multiple') scanTypeDisplay = `Deep Multiple (${scan.targetIds?.length || 0})`;
@@ -708,7 +713,7 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       if (targetIds.length > 10) throw new Error('Maximum 10 targets allowed for deep multiple scan');
       result = await nmapAPI.startDeepMultipleScan(targetIds, userId, scanName);
     } else {
-      // Scan normal
+      // normal scan
       const presetMap = {
         'quick': 'quick_scan',
         'deep': 'deep_scan'
@@ -739,7 +744,7 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       scan_mode: scanMode
     };
 
-    // Adicionar ao estado local
+    // Add to local state and persist
     state.scans.unshift(scan);
     saveScans(state.scans);
 
@@ -753,7 +758,7 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
   } catch (error) {
     console.error('Failed to start scan:', error);
 
-    // Fallback para demo mode
+    // Fallback to demo mode
     const userId = getCurrentUserId();
     const openPorts = simulateOpenPorts(proto);
     const cveList = simulateCVEs(openPorts);
@@ -810,7 +815,7 @@ function statusClass(s) {
 }
 
 async function renderScanResultsPage() {
-  // Atualizar estado local antes de renderizar
+  // Update local state before rendering
   state.scans = await loadScans();
   const last = getLastScanForUI();
 
@@ -1074,7 +1079,6 @@ function createQuickScanInfoSection() {
 
 // NEW FUNCTION: Fill quick scan hosts table
 // FIXED FUNCTION: Fill quick scan hosts table
-// FIXED FUNCTION: Fill quick scan hosts table
 function fillQuickScanHostsTable(hosts) {
   const container = document.getElementById("ports-table-container");
   if (!container) return;
@@ -1097,8 +1101,8 @@ function fillQuickScanHostsTable(hosts) {
             <th>MAC Address</th>
             <th>Vendor</th>
             <th>Device Type</th>
-            <th>Status</th>
-            <th>Open Ports</th>
+            <!--<th>Status</th>-->
+            <!--<th>Open Ports</th>-->
           </tr>
         </thead>
         <tbody>
@@ -1124,8 +1128,8 @@ function fillQuickScanHostsTable(hosts) {
               <td><code>${mac}</code></td>
               <td>${vendor}</td>
               <td><span class="device-type">${deviceType}</span></td>
-              <td><span class="${statusClass}">${statusText}</span></td>
-              <td>${openPorts}</td>
+              <!--<td><span class="${statusClass}">${statusText}</span></td>-->
+              <!--<td>${openPorts}</td>-->
             </tr>
           `}).join('')}
         </tbody>
@@ -1455,39 +1459,214 @@ async function init() {
   document.getElementById('btn-show-history')?.addEventListener('click', showScansHistoryView);
   document.getElementById('btn-show-history-results')?.addEventListener('click', showScansHistoryView);
 
-  /* SCANS HISTORY ACTIONS */
-  document.getElementById('scans-list')?.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
+/* SCANS HISTORY ACTIONS */
+document.getElementById('scans-list')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
 
-    const scanId = btn.dataset.scanId;
+  const scanId = btn.dataset.scanId;
 
-    if (btn.dataset.action === 'view-scan') {
-      showActiveScanView();
-      // Recarregar scans para garantir dados atualizados
-      state.scans = await loadScans();
-      const scanIndex = state.scans.findIndex(s => s.id === scanId);
-      if (scanIndex !== -1) {
-        // Move to top temporarily for display
-        const [selectedScan] = state.scans.splice(scanIndex, 1);
-        state.scans.unshift(selectedScan);
-        saveScans(state.scans);
-        renderScanResultsPage();
+  if (btn.dataset.action === 'view-scan') {
+    await viewHistoricalScan(scanId);
+  }
+
+  if (btn.dataset.action === 'rescan') {
+    // 🆕 SUBSTITUIR POR:
+    await setupRescan(scanId);
+  }
+});
+
+// 🆕 NOVA FUNÇÃO: Carregar e mostrar scan histórico completo
+async function viewHistoricalScan(scanId) {
+  try {
+    console.log('📋 Loading historical scan:', scanId);
+    
+    // 1. Mostrar loading screen
+    showActiveScanView();
+    document.getElementById('scan-loading').style.display = 'block';
+    document.getElementById('scan-results-content').style.display = 'none';
+    document.getElementById('loading-target').textContent = 'Loading historical scan results...';
+
+    // 2. Buscar dados COMPLETOS do scan da Firebase
+    const scanDetails = await nmapAPI.getScanStatus(scanId);
+    console.log('📊 Historical scan details:', scanDetails);
+
+    // 3. Processar e mostrar resultados
+    if (scanDetails && scanDetails.scan) {
+      // Criar model completo com os dados da Firebase
+      const model = createModelFromApiResponse(scanDetails);
+      
+      // Esconder loading e mostrar resultados
+      document.getElementById('scan-loading').style.display = 'none';
+      document.getElementById('scan-results-content').style.display = 'block';
+      
+      // Renderizar com dados reais
+      updateScanResultsUI(model);
+      
+      // Atualizar estado local
+      updateLocalScanState(scanId, scanDetails);
+    } else {
+      throw new Error('No scan data found');
+    }
+
+  } catch (error) {
+    console.error('❌ Error loading historical scan:', error);
+    
+    // Fallback: usar dados locais se disponíveis
+    const localScan = state.scans.find(s => s.id === scanId);
+    if (localScan) {
+      document.getElementById('scan-loading').style.display = 'none';
+      document.getElementById('scan-results-content').style.display = 'block';
+      renderScanResultsPage(); // Usa dados locais
+    } else {
+      alert('Error loading scan results. Please try again.');
+      showScansHistoryView();
+    }
+  }
+}
+
+// 🆕 FUNÇÃO AUXILIAR: Atualizar estado local com dados frescos
+function updateLocalScanState(scanId, apiData) {
+  const scanIndex = state.scans.findIndex(s => s.id === scanId);
+  if (scanIndex !== -1) {
+    state.scans[scanIndex].apiStatus = apiData;
+    state.scans[scanIndex].status = 'Completed';
+    
+    // Mover para topo temporariamente para display
+    const [selectedScan] = state.scans.splice(scanIndex, 1);
+    state.scans.unshift(selectedScan);
+    saveScans(state.scans);
+  }
+}
+
+// 🆕 NOVA FUNÇÃO: Configurar rescan com dados pré-preenchidos
+async function setupRescan(scanId) {
+  try {
+    // 1. Buscar dados do scan original
+    state.scans = await loadScans();
+    const originalScan = state.scans.find(s => s.id === scanId);
+    
+    if (!originalScan) {
+      alert('Scan not found');
+      return;
+    }
+
+    console.log('🔄 Setting up rescan for:', originalScan);
+
+    // 2. Mostrar o modal de novo scan
+    showNewScanModal();
+
+    // 3. Pré-preencher os campos baseado no scan original
+    setTimeout(() => {
+      prefillRescanForm(originalScan);
+    }, 100); // Pequeno delay para garantir que o modal está renderizado
+
+  } catch (error) {
+    console.error('Error setting up rescan:', error);
+    alert('Error setting up rescan');
+  }
+}
+
+// 🆕 FUNÇÃO: Pré-preencher o formulário com dados do scan original
+function prefillRescanForm(originalScan) {
+  console.log('📝 Prefilling form with:', originalScan);
+
+  // 1. Scan Name - adicionar "Rescan" ao nome original
+  const scanNameInput = document.getElementById('ns-scan-name');
+  if (scanNameInput) {
+    const originalName = originalScan.scan_name || originalScan.targetValue || 'Scan';
+    scanNameInput.value = `Rescan of ${originalName}`;
+  }
+
+  // 2. Determinar modo de scan baseado no original
+  let scanMode = 'normal';
+  if (originalScan.scan_mode === 'deep-single') {
+    scanMode = 'deep-single';
+  } else if (originalScan.scan_mode === 'deep-multiple') {
+    scanMode = 'deep-multiple';
+  }
+
+  // 3. Selecionar o modo de scan correto
+  const scanModeRadio = document.querySelector(`input[name="ns-scan-mode"][value="${scanMode}"]`);
+  if (scanModeRadio) {
+    scanModeRadio.checked = true;
+    updateScanModeUI(); // Atualizar UI baseado no modo
+  }
+
+  // 4. Pré-preencher baseado no modo de scan
+  setTimeout(() => {
+    switch (scanMode) {
+      case 'normal':
+        prefillNormalRescan(originalScan);
+        break;
+      case 'deep-single':
+        prefillDeepSingleRescan(originalScan);
+        break;
+      case 'deep-multiple':
+        prefillDeepMultipleRescan(originalScan);
+        break;
+    }
+    
+    updateStartEnabled(); // Atualizar estado do botão Start
+  }, 200);
+}
+
+// 🆕 FUNÇÃO: Pré-preencher para scan normal
+function prefillNormalRescan(originalScan) {
+  const targetInput = document.getElementById('ns-target');
+  const chooseSelect = document.getElementById('ns-choose');
+  
+  if (targetInput && originalScan.targetValue) {
+    targetInput.value = originalScan.targetValue;
+  }
+  
+  // Tentar selecionar no dropdown de targets salvos
+  if (chooseSelect && originalScan.targetId) {
+    chooseSelect.value = originalScan.targetId;
+  }
+
+  // Selecionar tipo de scan (quick/deep)
+  const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
+  const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
+  if (scanTypeRadio) {
+    scanTypeRadio.checked = true;
+  }
+
+  // Selecionar protocolo
+  const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
+  if (protoRadio) {
+    protoRadio.checked = true;
+  }
+}
+
+// 🆕 FUNÇÃO: Pré-preencher para deep single
+function prefillDeepSingleRescan(originalScan) {
+  if (originalScan.targetId) {
+    // Selecionar o target no radio button
+    setTimeout(() => {
+      const targetRadio = document.querySelector(`input[name="ns-selected-target"][value="${originalScan.targetId}"]`);
+      if (targetRadio) {
+        targetRadio.checked = true;
       }
-    }
+    }, 300); // Dar tempo para a UI atualizar
+  }
+}
 
-    if (btn.dataset.action === 'rescan') {
-      // Recarregar scans para garantir dados atualizados
-      state.scans = await loadScans();
-      const scan = state.scans.find(s => s.id === scanId);
-      if (!scan) return;
+// 🆕 FUNÇÃO: Pré-preencher para deep multiple
+function prefillDeepMultipleRescan(originalScan) {
+  if (originalScan.targetIds && originalScan.targetIds.length > 0) {
+    // Selecionar os targets nos checkboxes
+    setTimeout(() => {
+      originalScan.targetIds.forEach(targetId => {
+        const targetCheckbox = document.querySelector(`input[name="ns-selected-targets"][value="${targetId}"]`);
+        if (targetCheckbox) {
+          targetCheckbox.checked = true;
+        }
+      });
+    }, 300); // Dar tempo para a UI atualizar
+  }
+}
 
-      // Pre-fill new scan form with same target
-      // Esta funcionalidade pode ser expandida para preencher automaticamente
-      // baseado no tipo de scan anterior
-      showNewScanModal();
-    }
-  });
 
   /* SCANS CONTROLS */
   const btnRefresh = document.getElementById("scan-refresh");
