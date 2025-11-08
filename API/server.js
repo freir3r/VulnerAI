@@ -83,21 +83,8 @@ const PRESETS = {
   quick_scan: {
     args: [
       '-sn',                   // Host discovery only
-      '-PR',                   // ARP discovery (this works!)
-      // REMOVE TCP probes since they're blocked:
-      // '-PS80,443,22',       // TCP SYN (blocked)
-      // '-PA80,443',          // TCP ACK (blocked)
-      // REMOVE UDP/SCTP:
-      // '-PU53,123,161',      // UDP (probably blocked)
-      // '-PY443,3389',        // SCTP (probably blocked)
-      '-T4',                   // Aggressive timing
-      '--min-hostgroup', '128',
-      '--max-hostgroup', '256',
-      '--min-parallelism', '10',
-      '--max-parallelism', '20',
-      '--host-timeout', '30s', // Much shorter since ARP is fast
-      '--max-retries', '1',
-      // No DNS needed for ARP scanning
+      '-n',
+      '-PR',
       '-oX', '-'
     ],
     calculateTimeout: function (target) {
@@ -280,21 +267,55 @@ function isAllowedTarget(target) {
   return true;
 }
 
+const { toVendor, isRandomMac } = require('@network-utils/vendor-lookup');
+
 function classifyDevice(ipv4, mac, vendor, hostname) {
   // Default classification
   let deviceType = 'Unknown Device';
   let deviceCategory = 'unknown';
   let confidence = 'low';
+  let detectedVendor = vendor;
+  let classificationBasis = 'default';
+
+  // Use MAC lookup to enhance vendor information
+  if (!vendor && mac) {
+    try {
+      // Check if it's a random MAC first
+      if (isRandomMac(mac)) {
+        console.log(`[MAC Lookup] ${mac} is a random MAC address (mobile device privacy)`);
+        detectedVendor = 'Random MAC (Mobile Device)';
+        classificationBasis = 'random_mac';
+      } else {
+        const vendorResult = toVendor(mac);
+        if (vendorResult && vendorResult !== '') {
+          detectedVendor = vendorResult;
+          classificationBasis = 'mac_oui';
+          console.log(`[MAC Lookup] ${mac} → ${detectedVendor}`);
+        } else {
+          console.log(`[MAC Lookup] ${mac} → No vendor found in database`);
+        }
+      }
+    } catch (error) {
+      console.log(`[MAC Lookup] Error for ${mac}: ${error.message}`);
+    }
+  } else if (vendor) {
+    classificationBasis = 'vendor';
+  }
 
   // Convert to lowercase for easier matching
+  const vendorLower = (detectedVendor || '').toLowerCase();
   const macUpper = mac ? mac.toUpperCase() : '';
-  const vendorLower = vendor ? vendor.toLowerCase() : '';
-  const hostnameLower = hostname ? hostname.toLowerCase() : '';
+  const hostnameLower = (hostname || '').toLowerCase();
 
-  console.log(`Classifying: IP=${ipv4}, MAC=${mac}, Vendor=${vendor}, Hostname=${hostname}`);
+  console.log(`Classifying: IP=${ipv4}, MAC=${mac}, Vendor=${detectedVendor}, Hostname=${hostname}`);
 
-  // Classification by VENDOR first (most reliable)
-  if (vendorLower.includes('fortinet') || vendorLower.includes('fortigate')) {
+  // ENHANCED CLASSIFICATION LOGIC
+  if (vendorLower.includes('huawei')) {
+    deviceType = 'Network Router/Gateway';
+    deviceCategory = 'networking';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('fortinet') || vendorLower.includes('fortigate')) {
     deviceType = 'Network Firewall';
     deviceCategory = 'network_security';
     confidence = 'high';
@@ -302,6 +323,11 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
   else if (vendorLower.includes('cisco') || vendorLower.includes('juniper') || vendorLower.includes('aruba')) {
     deviceType = 'Network Switch/Router';
     deviceCategory = 'networking';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('palo') && vendorLower.includes('alto')) {
+    deviceType = 'Network Firewall';
+    deviceCategory = 'network_security';
     confidence = 'high';
   }
   else if (vendorLower.includes('dell') || vendorLower.includes('hp') || vendorLower.includes('lenovo') ||
@@ -325,95 +351,72 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
     deviceCategory = 'iot';
     confidence = 'medium';
   }
+  else if (vendorLower.includes('google') || vendorLower.includes('nest')) {
+    deviceType = 'Smart Home Device';
+    deviceCategory = 'iot';
+    confidence = 'high';
+  }
   else if (vendorLower.includes('intel') || vendorLower.includes('broadcom') || vendorLower.includes('realtek')) {
     deviceType = 'Network Interface Card';
     deviceCategory = 'networking';
     confidence = 'medium';
   }
-
-  // Classification by MAC OUI (if no vendor or low confidence)
-  else if (macUpper.startsWith('00:09:0F')) { // Fortinet
-    deviceType = 'Network Firewall';
-    deviceCategory = 'network_security';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('F2:16') || macUpper.startsWith('F2:00') || macUpper.startsWith('F2:1C')) {
-    deviceType = 'Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('00:50:56') || macUpper.startsWith('005056')) { // VMware
-    deviceType = 'VMware Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('00:1C:42') || macUpper.startsWith('001C42')) { // Parallels
-    deviceType = 'Parallels Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('30:86:2D') || macUpper.startsWith('000D3A')) { // Microsoft
-    deviceType = 'Microsoft/Hyper-V Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('00:0C:29')) { // VMware ESX
-    deviceType = 'VMware ESX Server';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (macUpper.startsWith('00:15:5D')) { // Hyper-V
-    deviceType = 'Hyper-V Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-
-  // Classification by hostname patterns
-  else if (hostnameLower.includes('router') || hostnameLower.includes('gateway')) {
-    deviceType = 'Network Router';
-    deviceCategory = 'networking';
-    confidence = 'medium';
-  }
-  else if (hostnameLower.includes('switch')) {
-    deviceType = 'Network Switch';
-    deviceCategory = 'networking';
-    confidence = 'medium';
-  }
-  else if (hostnameLower.includes('firewall') || hostnameLower.includes('fw-')) {
-    deviceType = 'Network Firewall';
-    deviceCategory = 'network_security';
-    confidence = 'medium';
-  }
-  else if (hostnameLower.includes('server') || hostnameLower.includes('srv-')) {
-    deviceType = 'Server';
-    deviceCategory = 'server';
-    confidence = 'medium';
-  }
-  else if (hostnameLower.includes('print') || hostnameLower.includes('prn-')) {
+  else if (vendorLower.includes('canon') || vendorLower.includes('epson') || vendorLower.includes('brother')) {
     deviceType = 'Network Printer';
     deviceCategory = 'peripheral';
-    confidence = 'medium';
+    confidence = 'high';
   }
-  else if (hostnameLower.includes('ap-') || hostnameLower.includes('wifi') || hostnameLower.includes('wireless')) {
-    deviceType = 'Wireless Access Point';
+  else if (vendorLower.includes('raspberry') || vendorLower.includes('arduino')) {
+    deviceType = 'Embedded/IoT Device';
+    deviceCategory = 'iot';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('netgear') || vendorLower.includes('tplink') || vendorLower.includes('d-link')) {
+    deviceType = 'Network Device';
     deviceCategory = 'networking';
     confidence = 'medium';
   }
+  else if (vendorLower.includes('sagemcom')) {
+    deviceType = 'Network Router/Gateway';
+    deviceCategory = 'networking';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('asrock') || vendorLower.includes('micro-star')) {
+    deviceType = 'Computer Motherboard';
+    deviceCategory = 'computer';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('lg innotek')) {
+    deviceType = 'Smart Device/Phone';
+    deviceCategory = 'iot';
+    confidence = 'high';
+  }
+  else if (vendorLower.includes('random mac')) {
+    deviceType = 'Mobile Device (Random MAC)';
+    deviceCategory = 'mobile';
+    confidence = 'medium';
+  }
 
-  // Default classifications based on common patterns
-  else {
+  // Default classification based on available data
+  else if (!mac && !detectedVendor) {
+    deviceType = 'Unknown Host';
+    deviceCategory = 'unknown';
+    confidence = 'very-low';
+  }
+  else if (mac || detectedVendor) {
     deviceType = 'Network Device';
     deviceCategory = 'networking';
     confidence = 'low';
   }
 
-  console.log(`Classification: ${deviceType} (${deviceCategory}) - Confidence: ${confidence}`);
+  console.log(`🎯 CLASSIFICATION: ${deviceType} (${deviceCategory}) - Confidence: ${confidence}`);
 
   return {
     device_type: deviceType,
     device_category: deviceCategory,
     confidence: confidence,
-    classification_basis: vendor ? 'vendor' : (mac ? 'mac_oui' : 'default')
+    vendor: detectedVendor,
+    classification_basis: classificationBasis
   };
 }
 
