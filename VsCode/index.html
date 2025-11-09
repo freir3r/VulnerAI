@@ -1,6 +1,5 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,7 +20,6 @@
       <span class="i-burger"></span>
     </button>
 
-    <!-- LOGO (white, no text) -->
     <div class="brand">
       <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
     </div>
@@ -48,7 +46,7 @@
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-top">
-        <a href="scans.html" class="btn-new">
+        <a href="scans.html" class="btn-new" id="sidebar-new-scan">
           <img class="ico" src="../Resources/Dashboard/New Scan Eye.png" alt="" /> <span>New Scan</span>
         </a>
       </div>
@@ -74,18 +72,14 @@
         <h1 id="page-title">Dashboard</h1>
       </div>
 
-      <!-- Home -->
+      <!-- Home content will be injected by home.js -->
       <section id="view-home" class="view active" aria-labelledby="page-title">
-        <div class="empty">
-          <h3>Welcome to VulnerAI</h3>
-          <p>Start a quick scan on your IP or domain.</p>
-          <a href="scans.html" class="btn-primary" id="cta-new-scan">Start a Scan</a>
-        </div>
+        <!-- placeholder; JS will render the dashboard here -->
       </section>
     </main>
   </div>
 
-  <!-- Premium (kept) -->
+  <!-- Premium modal -->
   <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
     <div class="backdrop" data-close></div>
     <div class="dialog">
@@ -104,11 +98,13 @@
     </div>
   </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- Firebase libs (kept optional) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
   <script src="home.js"></script>
   <script>
+    // ESC closes premium
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const m = document.getElementById('modal-premium');
@@ -116,6 +112,7 @@
       }
     });
 
+    // Redirect if not logged in
     try {
       if (!localStorage.getItem('vulnerai.auth')) {
         window.location.replace('login.html');
@@ -125,5 +122,4 @@
     }
   </script>
 </body>
-
 </html>

@@ -7,7 +7,7 @@
   <title>VulnerAI — IP List</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="iplist.css" />
@@ -31,7 +31,7 @@
       <div class="user-area">
         <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
           <img src="../Resources/Dashboard/Icon.png" class="avatar-icon" alt="User" />
-          <span class="avatar-caret">▾</span>
+          <span class="avatar-caret">Down</span>
         </button>
         <div id="menu-user" class="menu" role="menu" aria-hidden="true">
           <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
@@ -84,6 +84,7 @@
 
             <div class="toolbar">
               <button id="iplist-open-add" class="btn-primary">+ Add Target</button>
+              <button id="iplist-import-csv" class="btn-secondary">↑ Import CSV</button>
 
               <div class="search-wrap">
                 <input id="tgt-search" class="input" placeholder="Search targets…" />
@@ -96,6 +97,13 @@
                   <option value="name">Name (A→Z)</option>
                   <option value="scans">Scans (desc)</option>
                   <option value="cves">CVEs (desc)</option>
+                </select>
+              </div>
+
+              <div class="sort-wrap">
+                <label class="muted small" for="tags-filter">Tag</label>
+                <select id="tags-filter" class="input input-sm">
+                  <option value="">All tags</option>
                 </select>
               </div>
             </div>
@@ -121,7 +129,7 @@
           <div id="targets-list" class="targets-list"></div>
         </div>
 
-        <!-- Add Target Popup -->
+        <!-- Add/Edit Target Popup -->
         <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog" aria-labelledby="iplist-modal-title">
           <div class="iplist-backdrop" data-close></div>
           <div class="iplist-dialog">
@@ -167,9 +175,9 @@
       <h2 id="modal-premium-title">Unlock Premium</h2>
       <p>Get advanced reports, scheduled scans, and unlimited history.</p>
       <ul class="features">
-        <li>⏱ Scheduled scans</li>
-        <li>📊 Full reports (PDF/CSV)</li>
-        <li>🔔 Alerts</li>
+        <li>Scheduled scans</li>
+        <li>Full reports (PDF/CSV)</li>
+        <li>Alerts</li>
       </ul>
       <div class="actions">
         <button class="btn-secondary" data-close>Later</button>
@@ -178,8 +186,8 @@
     </div>
   </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
   <script src="iplist.js"></script>
   <script>

@@ -167,7 +167,7 @@
         <!-- Results Content -->
         <div id="scan-results-content" style="display: none;">
           <!-- Header Section -->
-          <div class="scan-results-header">
+          <div class="scan-header">
             <h1>Scan Results</h1>
             <div class="scan-meta-grid">
               <div class="meta-group">
@@ -233,6 +233,7 @@
                   <button class="btn-secondary" id="btn-show-history-results">Show History</button>
                   <button class="btn-secondary" id="scan-refresh">Refresh</button>
                   <button class="btn-secondary" id="btn-clear-trivial">Clear Low & Trivial (CVSS < 4)</button>
+                  <button class="btn-secondary" id="btn-export-csv">Export CSV</button>
                 </div>
               </div>
               <div id="vuln-table-container">
@@ -251,8 +252,29 @@
             <span class="muted" id="scans-count">0 scans</span>
           </div>
 
+          <!-- Filters -->
+          <div class="history-filters" style="margin-bottom: 20px; display: flex; gap: 12px;">
+            <input type="text" id="history-filter-search" class="ns-input" placeholder="Search by target or name..." style="flex: 1;" />
+            <select id="history-filter-status" class="input">
+              <option value="">All Status</option>
+              <option value="ongoing">Ongoing</option>
+              <option value="Completed">Completed</option>
+              <option value="failed">Failed</option>
+            </select>
+            <select id="history-filter-type" class="input">
+              <option value="">All Types</option>
+              <option value="quick">Quick</option>
+              <option value="deep">Deep</option>
+            </select>
+          </div>
+
           <div class="scans-list" id="scans-list">
             <!-- Scans will be populated here -->
+          </div>
+
+          <!-- Pagination -->
+          <div id="history-pagination" style="display: flex; justify-content: center; gap: 8px; margin-top: 20px;">
+            <!-- Pagination buttons will be inserted here -->
           </div>
 
           <div class="scans-empty" id="scans-empty">

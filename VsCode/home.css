@@ -221,3 +221,163 @@ body.dark .btn-secondary{
   background:#171c26; color:var(--ink); border:1px solid var(--border);
 }
 body.dark .btn-secondary:hover{ filter:brightness(1.06); }
+
+
+/* ---------- dashboard — premium visual treatment ---------- */
+/* layout & spacing */
+.dashboard-grid{display:flex;flex-direction:column;gap:22px;padding:10px 18px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:18px}
+@media (max-width:980px){ .kpi-row{grid-template-columns:repeat(2,1fr)} }
+
+/* glass card base */
+.card{
+  background: linear-gradient(135deg, rgba(255,255,255,0.86), rgba(250,250,250,0.92));
+  backdrop-filter: blur(6px) saturate(1.05);
+  border-radius:16px;
+  padding:18px;
+  color:var(--ink);
+  border:1px solid rgba(17,21,26,0.06);
+  box-shadow: 0 12px 30px rgba(22,28,35,0.06);
+  transition: transform .18s cubic-bezier(.2,.9,.2,1), box-shadow .18s ease;
+  overflow:visible;
+}
+body.dark .card{
+  background: linear-gradient(180deg, rgba(20,25,30,0.55), rgba(10,12,16,0.6));
+  border:1px solid rgba(255,255,255,0.04);
+  box-shadow: 0 18px 40px rgba(2,6,12,0.6);
+}
+.card:hover{ transform: translateY(-6px); box-shadow: 0 20px 60px rgba(10,16,30,0.08) }
+
+/* KPI */
+.kpi{display:flex;flex-direction:column;gap:8px}
+.kpi-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.kpi-value{font-size:24px;font-weight:900;color:var(--ink)}
+.kpi-sub{font-size:13px;color:var(--muted)}
+
+/* KPI accent badge (top-right small decorative) */
+.kpi::after{
+  content:"";
+  position:absolute;
+  width:6px;height:6px;border-radius:2px;
+  right:18px;top:18px;
+  background:linear-gradient(180deg,var(--primary), #ffbf00);
+  box-shadow:0 4px 14px rgba(255,200,0,0.12);
+  transform:translateY(0);
+}
+
+/* main area layout */
+.main-row{display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start}
+@media (max-width:1100px){ .main-row{grid-template-columns:1fr} }
+
+/* panel header */
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.panel-header h3{margin:0;font-size:18px;letter-spacing:.01em}
+.panel-actions{display:flex;gap:10px;align-items:center}
+
+/* buttons — modern look */
+.btn{
+  padding:9px 14px;border-radius:12px;border:none;cursor:pointer;font-weight:800;font-size:13px;
+  display:inline-flex;gap:8px;align-items:center;justify-content:center;
+  transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.btn:active{ transform: translateY(1px) }
+.btn-primary{
+  background: linear-gradient(180deg,var(--primary), #f7c600);
+  color:#0c0c0c; border:1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 6px 18px rgba(255,204,0,0.12);
+}
+.btn-primary:hover{ transform: translateY(-2px); filter:brightness(.98) }
+.btn-ghost{
+  background:transparent;border:1px solid rgba(0,0,0,0.06); color:var(--ink);
+  padding:8px 12px;font-weight:700;border-radius:12px;
+}
+.btn-ghost:hover{ background:rgba(0,0,0,0.02) }
+
+/* panel-body */
+.panel-body{overflow:hidden;border-radius:10px}
+
+/* table — card style with soft header */
+.table{width:100%;border-collapse:collapse;font-size:14px}
+.table thead th{
+  background:transparent;text-align:left;padding:14px;color:var(--muted);font-weight:800;font-size:13px;
+  text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid rgba(0,0,0,0.04);
+}
+.table tbody td{
+  padding:14px;border-bottom:1px solid rgba(0,0,0,0.03);vertical-align:middle;color:var(--ink);
+}
+.table tbody tr:hover td{ background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.02)); }
+body.dark .table tbody tr:hover td{ background: rgba(255,255,255,0.02) }
+
+/* refined cells */
+.target-cell{font-weight:800;color:var(--ink)}
+.type-cell{color:var(--muted);font-weight:700}
+
+/* status badge */
+.status-dot{display:inline-flex;align-items:center;gap:10px;font-weight:800}
+.status-dot .dot{
+  width:10px;height:10px;border-radius:50%;display:inline-block;box-shadow:0 1px 0 rgba(0,0,0,0.06);
+}
+.status-dot.ongoing .dot{background:#60a5fa}
+.status-dot.completed .dot{background:#16a34a}
+.status-dot.error .dot{background:#ef4444}
+.status-dot span{font-weight:700;color:var(--muted);font-size:13px}
+
+/* findings & duration */
+.small-muted{font-size:13px;color:var(--muted);font-weight:700}
+
+/* re-run button — circle icon + label */
+.reexec-btn{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.06);
+  background:transparent;font-weight:800;cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.reexec-btn .ico{width:16px;height:16px;display:inline-block;vertical-align:middle;opacity:.95}
+.reexec-btn:hover{ background:rgba(0,0,0,0.03); transform:translateY(-3px) }
+
+/* tiny ripple on click */
+.reexec-btn:after{
+  content:"";position:absolute;left:0;top:0;width:0;height:0;border-radius:50%;background:rgba(0,0,0,0.06);
+  transform:translate(-50%,-50%);opacity:0;transition:opacity .4s, width .4s, height .4s;
+  pointer-events:none;
+}
+
+/* side panel enhanced */
+.side-panel h4{margin:0 0 10px;font-size:16px}
+.stat{display:flex;justify-content:space-between;align-items:center;padding:12px 6px;border-top:1px solid rgba(0,0,0,0.04)}
+.stat:first-of-type{border-top:0}
+.stat-label{color:var(--muted);font-size:13px}
+.stat-value{font-weight:900;font-size:16px}
+
+/* large quick actions */
+.side-panel .btn{width:100%;padding:12px 14px;border-radius:12px}
+.side-panel .btn-primary{font-size:14px}
+.side-panel .btn-ghost{background:transparent;border:1px solid rgba(0,0,0,0.06);color:var(--ink)}
+
+/* empty */
+.empty-note{color:var(--muted);padding:22px;text-align:center;font-size:14px}
+
+/* modal styling with scale-in animation */
+.modal-backdrop{position:fixed;inset:0;background:rgba(4,8,12,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;opacity:0;pointer-events:none;transition:opacity .18s ease}
+.modal-backdrop.show{opacity:1;pointer-events:auto}
+.modal-dialog{
+  background:var(--bg);padding:20px;border-radius:12px;max-width:720px;min-width:320px;color:var(--ink);border:1px solid var(--border);box-shadow:var(--shadow);
+  transform:translateY(8px) scale(.98); transition:transform .22s cubic-bezier(.2,.9,.2,1), opacity .18s ease;
+  opacity:0;
+}
+.modal-backdrop.show .modal-dialog{ transform:translateY(0) scale(1); opacity:1 }
+
+/* inputs */
+.modal-body input, .modal-body textarea{
+  width:100%;padding:12px;margin-top:10px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);background:transparent;color:var(--ink);
+}
+
+/* small responsive tweaks */
+@media (max-width:700px){
+  .main-row{grid-template-columns:1fr}
+  .panel-actions{flex-wrap:wrap;gap:8px}
+  .card{padding:14px}
+}
+
+/* dark overrides */
+body.dark .table thead th{color:#a8b0bf}
+body.dark .kpi-value{color:#eaf0fb}
