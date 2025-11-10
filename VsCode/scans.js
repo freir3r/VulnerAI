@@ -346,11 +346,15 @@ function renderScanResultsPageWithData(apiStatus) {
 
 // NEW FUNCTION: Create model directly from API response
 function createModelFromApiResponse(apiStatus) {
-  console.log('Creating model from API response:', apiStatus);
+  console.log('🔍 [DEBUG] Creating model from API response:', apiStatus);
 
   if (!apiStatus || !apiStatus.scan) {
     return getFallbackModel();
   }
+
+  // 🆕 EXTRACT RISK ASSESSMENT FROM SCAN SUMMARY
+  const riskAssessment = apiStatus.scan.summary?.risk_assessment;
+  console.log('🎯 [DEBUG] Risk assessment found in API:', riskAssessment);
 
   if (apiStatus.scan.status === 'ongoing') {
     return {
@@ -366,26 +370,30 @@ function createModelFromApiResponse(apiStatus) {
       hosts: [],
       cveList: [],
       status: 'ongoing',
-      message: 'Scan in progress...'
+      message: 'Scan in progress...',
+      // 🆕 INCLUDE RISK ASSESSMENT IN MODEL
+      scanSummary: apiStatus.scan.summary || {},
+      apiStatus: apiStatus
     };
   }
 
   if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
     const hosts = apiStatus.ScanResults;
-    console.log('Processing fresh ScanResults:', hosts);
+    console.log('🔍 [DEBUG] Processing ScanResults for model:', hosts);
 
-    // For quick scans, extract host information with proper field mapping
     const hostDetails = hosts.map((host, index) => {
       return {
         id: host.id || `host${index + 1}`,
-        ip: host.host, // This is the correct field from your API
+        ip: host.host,
         hostname: host.hostname || 'N/A',
         mac_address: host.mac_address || 'N/A',
         vendor: host.vendor || 'Unknown',
         device_type: host.device_type || 'Unknown',
         host_status: host.host_status || 'unknown',
         ports: host.ports || [],
-        open_ports_count: host.open_ports_count || 0
+        open_ports_count: host.open_ports_count || 0,
+        // 🆕 INCLUDE HOST-LEVEL RISK ASSESSMENT TOO
+        risk_assessment: host.risk_assessment || null
       };
     });
 
@@ -414,11 +422,16 @@ function createModelFromApiResponse(apiStatus) {
       cveList: cveList,
       status: 'complete',
       isQuickScan: apiStatus.scan.scan_type === 'quick_scan',
-      scanSummary: apiStatus.scan.summary,
-      rawResults: apiStatus.ScanResults
+      // 🆕 CRITICAL: INCLUDE THE FULL SCAN SUMMARY WITH RISK ASSESSMENT
+      scanSummary: apiStatus.scan.summary || {},
+      apiStatus: apiStatus
     };
 
-    console.log('Fresh model result:', result);
+    console.log('🎯 [DEBUG] Final model with risk data:', {
+      scanSummary: result.scanSummary,
+      riskAssessment: result.scanSummary?.risk_assessment
+    });
+
     return result;
   }
 
@@ -1080,6 +1093,8 @@ function createModelFromApiStatus(scan) {
 }
 
 function updateScanResultsUI(model) {
+ window.currentScanModel = model;
+
   // Update header
   document.getElementById("sr-target").textContent = model.targetValue;
   document.getElementById("sr-type").textContent = (model.type === "deep" ? "Deep Scan" : "Quick Scan");
@@ -1234,35 +1249,222 @@ function fillPortsTable(host) {
   const container = document.getElementById("ports-table-container");
   if (!container) return;
 
+  // 🆕 DEBUG: Check what data we actually have
+  console.log('🔍 [DEBUG] fillPortsTable called with:', {
+    host: host,
+    model: window.currentScanModel,
+    scanSummary: window.currentScanModel?.scanSummary,
+    riskAssessment: window.currentScanModel?.scanSummary?.risk_assessment
+  });
+
+  // 🆕 TRY DIFFERENT DATA SOURCES
+  let riskData = null;
+  
+  // Try source 1: Model scanSummary
+  if (window.currentScanModel?.scanSummary?.risk_assessment) {
+    riskData = window.currentScanModel.scanSummary.risk_assessment;
+    console.log('✅ Using risk data from model.scanSummary');
+  }
+  // Try source 2: Direct from API response
+  else if (window.currentScanModel?.apiStatus?.scan?.summary?.risk_assessment) {
+    riskData = window.currentScanModel.apiStatus.scan.summary.risk_assessment;
+    console.log('✅ Using risk data from apiStatus');
+  }
+  // Try source 3: Individual host risk assessment as fallback
+  else if (host?.risk_assessment) {
+    riskData = {
+      totalHosts: 1,
+      averageRiskScore: host.risk_assessment.riskScore || 0,
+      riskDistribution: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 },
+      overallRisk: host.risk_assessment.finalRisk || 'UNKNOWN',
+      totalFindings: host.risk_assessment.findings?.length || 0
+    };
+    console.log('⚠️ Using fallback risk data from host');
+  }
+  // Final fallback
+  else {
+    riskData = {
+      totalHosts: 1,
+      averageRiskScore: 0,
+      riskDistribution: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 },
+      overallRisk: 'UNKNOWN',
+      totalFindings: 0
+    };
+    console.log('❌ Using default risk data');
+  }
+
+  console.log('🎯 Final riskData:', riskData);
+
   if (!host || !host.ports || host.ports.length === 0) {
-    container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">No ports data available</div>';
+    container.innerHTML = `
+      <div class="risk-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; padding: 15px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Overall Risk:</span>
+          <span class="risk-value ${riskData.overallRisk.toLowerCase()}" style="font-size: 1.1em; font-weight: bold; color: ${getRiskColor(riskData.overallRisk)};">${riskData.overallRisk}</span>
+        </div>
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Hosts Analyzed:</span>
+          <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.totalHosts}</span>
+        </div>
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Avg Risk Score:</span>
+          <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.averageRiskScore}</span>
+        </div>
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Security Findings:</span>
+          <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.totalFindings}</span>
+        </div>
+      </div>
+      <div class="muted" style="padding: 20px; text-align: center; color: var(--muted);">No ports data available</div>
+    `;
     return;
   }
 
   container.innerHTML = `
-    <table class="ports-table">
-      <thead>
-        <tr>
-          <th>Port</th>
-          <th>Service</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${host.ports.map(port => {
-    const statusClass = `status-${port.status}`;
-    const statusText = port.status ? port.status.charAt(0).toUpperCase() + port.status.slice(1) : 'Unknown';
-    return `
-            <tr>
-              <td>${port.port}</td>
-              <td>${port.service || ""}</td>
-              <td><span class="${statusClass}">${statusText}</span></td>
-            </tr>
-          `;
-  }).join('')}
-      </tbody>
-    </table>
+    <div class="risk-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; padding: 15px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
+      <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Overall Risk:</span>
+        <span class="risk-value ${riskData.overallRisk.toLowerCase()}" style="font-size: 1.1em; font-weight: bold; color: ${getRiskColor(riskData.overallRisk)};">${riskData.overallRisk}</span>
+      </div>
+      <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Hosts Analyzed:</span>
+        <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.totalHosts}</span>
+      </div>
+      <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Avg Risk Score:</span>
+        <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.averageRiskScore}</span>
+      </div>
+      <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Security Findings:</span>
+        <span class="risk-value" style="font-size: 1.1em; font-weight: bold; color: var(--ink);">${riskData.totalFindings}</span>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-header">
+        <h2>Open Ports (${host.ports.length})</h2>
+      </div>
+      <table class="ports-table">
+        <thead>
+          <tr>
+            <th>Port</th>
+            <th>Service</th>
+            <th>Status</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${host.ports.map(port => {
+            // Extrair dados da estrutura do Firebase
+            const portNumber = port.port;
+            const service = port.service || {};
+            
+            // Construir nome do serviço com product + version
+            let serviceDisplay = service.name || 'Unknown';
+            if (service.product) {
+              serviceDisplay = service.product;
+              if (service.version) {
+                serviceDisplay += ` ${service.version}`;
+              }
+            }
+            
+            // Status da porta
+            const status = port.state || 'unknown';
+            const statusClass = `status-${status}`;
+            const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+            
+            // Detalhes adicionais
+            const details = [];
+            if (service.extrainfo) details.push(service.extrainfo);
+            if (service.tunnel) details.push(`Tunnel: ${service.tunnel}`);
+            if (service.ostype) details.push(`OS: ${service.ostype}`);
+            
+            const detailsText = details.length > 0 ? details.join(' • ') : '';
+
+            return `
+              <tr>
+                <td><strong>${portNumber}</strong></td>
+                <td>
+                  <div style="font-weight: 500; color: var(--ink);">${serviceDisplay}</div>
+                  ${service.name && service.name !== serviceDisplay ? 
+                    `<div style="font-size: 0.85em; color: var(--muted); margin-top: 2px;">${service.name}</div>` : ''}
+                </td>
+                <td><span class="${statusClass}">${statusText}</span></td>
+                <td style="font-size: 0.85em; color: var(--muted); max-width: 200px;">${detailsText}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- Mostrar recomendações de segurança se disponíveis -->
+    ${host.risk_assessment && host.risk_assessment.findings && host.risk_assessment.findings.length > 0 ? `
+      <div class="section" style="margin-top: 20px;">
+        <div class="section-header">
+          <h2> Security Recommendations</h2>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          ${host.risk_assessment.findings
+            .filter(finding => finding.risk === 'HIGH' || finding.risk === 'CRITICAL')
+            .slice(0, 3) // Mostrar apenas as top 3 críticas
+            .map(finding => `
+              <div class="recommendation-item ${finding.risk.toLowerCase()}" style="display: flex; align-items: flex-start; padding: 12px; border-radius: 6px; border-left: 4px solid ${getRiskBorderColor(finding.risk)}; background: ${getRiskBackgroundColor(finding.risk)};">
+                <div class="rec-severity-badge" style="padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; margin-right: 12px; min-width: 60px; text-align: center; background: ${getRiskBadgeColor(finding.risk)}; color: white;">
+                  ${finding.risk}
+                </div>
+                <div class="rec-content" style="flex: 1;">
+                  <div class="rec-title" style="font-weight: bold; margin-bottom: 4px; color: var(--ink);">
+                    Port ${finding.port} - ${finding.description}
+                  </div>
+                  <div class="rec-description" style="font-size: 0.9em; color: var(--muted);">
+                    ${finding.evidence}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
+}
+// Funções auxiliares para cores baseadas no risco
+function getRiskColor(risk) {
+  switch(risk.toLowerCase()) {
+    case 'critical': return '#dc3545';
+    case 'high': return '#fd7e14';
+    case 'medium': return '#ffc107';
+    case 'low': return '#198754';
+    case 'info': return '#0dcaf0';
+    default: return 'var(--ink)';
+  }
+}
+
+function getRiskBorderColor(risk) {
+  switch(risk.toLowerCase()) {
+    case 'critical': return '#dc3545';
+    case 'high': return '#fd7e14';
+    case 'medium': return '#ffc107';
+    default: return '#6c757d';
+  }
+}
+
+function getRiskBackgroundColor(risk) {
+  switch(risk.toLowerCase()) {
+    case 'critical': return '#f8d7da';
+    case 'high': return '#fff3cd';
+    case 'medium': return '#e7f1ff';
+    default: return '#f8f9fa';
+  }
+}
+
+function getRiskBadgeColor(risk) {
+  switch(risk.toLowerCase()) {
+    case 'critical': return '#dc3545';
+    case 'high': return '#fd7e14';
+    case 'medium': return '#0d6efd';
+    default: return '#6c757d';
+  }
 }
 
 function renderCVETable(cves) {
@@ -1571,21 +1773,33 @@ async function init() {
 
 /* SCANS HISTORY ACTIONS */
 document.getElementById('scans-list')?.addEventListener('click', async (e) => {
+  console.log('🎯 [DEBUG] Click event detected on:', e.target);
+  
   const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
+  console.log('🔘 [DEBUG] Closest button found:', btn);
+  
+  if (!btn) {
+    console.log('❌ [DEBUG] No button with data-action found');
+    return;
+  }
 
   const scanId = btn.dataset.scanId;
+  const action = btn.dataset.action;
+  
+  console.log('📋 [DEBUG] Action:', action, 'Scan ID:', scanId);
 
   if (btn.dataset.action === 'view-scan') {
+    console.log('🚀 [DEBUG] Calling viewHistoricalScan...');
     await viewHistoricalScan(scanId);
   }
 
   if (btn.dataset.action === 'rescan') {
-    // 🆕 SUBSTITUIR POR:
+    console.log('🔄 [DEBUG] Calling setupRescan...');
     await setupRescan(scanId);
   }
 
   if (btn.dataset.action === 'export-csv') {
+    console.log('📊 [DEBUG] Calling exportScanToCSV...');
     exportScanToCSV(scanId);
   }
 });
