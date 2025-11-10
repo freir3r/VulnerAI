@@ -2,13 +2,17 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
+
 const { spawn } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
 const xml2js = require('xml2js');
+const socketIo = require('socket.io');
+
 
 const PORT = process.env.PORT || 3000;
 
@@ -65,18 +69,20 @@ const PRESETS = {
   // Ultra Quick Scan: Just IPs and hostnames (30-60 seconds)
   quick_scan: {
     args: [
-      '-sn',                   // Host discovery only
-      '-PR',                   // ARP discovery (this works!)
+
+      '-sn',
       '-n',
-      '-n',
-      '-PR',
-      '-oX', '-'
+      '-T3',
+      '--max-retries', '2',
+      '--host-timeout', '1m',
+      '--min-parallelism', '20',
+      '-oX', '-',
     ],
     calculateTimeout: function (target) {
       const hostCount = estimateHostCount(target);
       const perHostTime = 1000; // 1 second per host (aggressive)
       const baseTime = 20000; // 20 seconds base
-      return Math.min(baseTime + (hostCount * perHostTime), 300000); // Max 5 min
+      return Math.min(baseTime + (hostCount * perHostTime), 500000); // Max 5 min
     },
     description: 'Fast network discovery - finds IPs, MAC addresses, hostnames, and device types',
     category: 'network_discovery',
@@ -86,23 +92,36 @@ const PRESETS = {
   // Deep Scan: Unchanged
   deep_scan: {
     args: [
-      '-sS', '-sV', '--version-intensity', '7', '-O', '-A',
-      '--script', 'default,safe,banner,discovery',
-      '-p1-1000,3389,5985,5986,1433,1521,3306,5432,27017',
-      '-T3', '--min-rate', '500', '--max-retries', '2',
-      '--host-timeout', '10m', '--open', '--reason',
-      '--system-dns', '-oX', '-'
+      '-sS',                        // TCP SYN scan (fast, stealthy)
+      '-sV',
+      '-O',
+      '--osscan-limit',                        // Service/version detection
+      '--version-intensity', '5',   // Aggressive version detection
+      '--script-timeout', '40s',  // Script timeout
+      '--script', 'default,vuln,banner', // Focused scripts for CVEs and banners
+      '--top-ports', '1000',                        // Scan all ports
+      '-T4',                        // Faster timing for LAN/in-lab
+      '--min-rate', '700',          // Minimum packet rate
+      '--max-retries', '2',         // Avoid excessive retries
+      '--host-timeout', '10m',      // Timeout per host
+      '--open',                     // Show only open ports
+      '--reason',                   // Show reason why port is open/closed
+      '-PR',
+      '--system-dns',                // Use system DNS
+      '-R',
+      '-oX', '-'                     // Output in XML (can be parsed)
     ],
     calculateTimeout: function (target) {
       const hostCount = estimateHostCount(target);
-      const perHostTime = 300000; // 5 minutes per host (deep scan is slow)
-      const baseTime = 60000; // 1 minute base
-      return Math.min(baseTime + (hostCount * perHostTime), 3600000); // Max 1 hour
+      const perHostTime = 180000; // 3 minutes per host (deep scan optimized)
+      const baseTime = 60000;      // 1 minute base
+      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 min
     },
-    description: 'Comprehensive single target scan',
+    description: 'Focused deep scan for open ports, service versions, and CVEs',
     category: 'deep_scan',
-    intensity: 'comprehensive'
+    intensity: 'high'
   }
+
 };
 
 // Add this RIGHT AFTER the PRESETS object definition:
@@ -121,7 +140,341 @@ Object.values(PRESETS).forEach(preset => {
 
 // --- Helper Functions ---
 
-// Add these helper functions right before your app.post('/scan'):
+// --- AI Risk Assessment Expert System ---
+const RISK_RULES = {
+  // Regras baseadas em portas e serviços
+  PORT_RULES: [
+    {
+      condition: (port, service) => port === 22 && service.version && parseFloat(service.version) < 8.0,
+      risk: 'HIGH',
+      points: 30,
+      description: 'SSH version outdated - potential vulnerabilities'
+    },
+    {
+      condition: (port, service) => port === 80 && service.name === 'http',
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'HTTP without TLS - data transmitted in cleartext'
+    },
+    {
+      condition: (port, service) => [135, 139, 445].includes(port) && service.ostype === 'Windows',
+      risk: 'MEDIUM',
+      points: 25,
+      description: 'Windows SMB services exposed - potential network attacks'
+    },
+    {
+      condition: (port, service) => port === 23 && service.name === 'telnet',
+      risk: 'HIGH',
+      points: 35,
+      description: 'Telnet service exposed - credentials transmitted in cleartext'
+    },
+    {
+      condition: (port, service) => port === 21 && service.name === 'ftp',
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'FTP service exposed - potential credential exposure'
+    },
+    {
+      condition: (port, service) => port === 3389 && service.name === 'ms-wbt-server',
+      risk: 'MEDIUM',
+      points: 25,
+      description: 'RDP service exposed - potential brute force attacks'
+    },
+    {
+      condition: (port, service) => port === 443 && service.name === 'http',
+      risk: 'LOW',
+      points: -10,
+      description: 'HTTPS enabled - encrypted communication'
+    },
+    {
+      condition: (port, service) => [3306, 5432, 1433, 1521].includes(port) && service.state === 'open',
+      risk: 'HIGH',
+      points: 25,
+      description: 'Database service exposed - high value target for attackers'
+    }
+  ],
+
+  // Regras baseadas em serviços específicos
+  SERVICE_RULES: [
+    {
+
+      condition: (service) => service.name === 'vmware-auth' && service.version === '1.0',
+      risk: 'HIGH',
+      points: 35,
+      description: 'VMware Authentication Daemon v1.0 - potentially vulnerable version'
+    },
+    {
+      condition: (service) => service.name === 'vmware-auth' && service.version === '1.10',
+      risk: 'MEDIUM',
+      points: 25,
+      description: 'VMware Authentication Daemon v1.10 - check for updates'
+    },
+    {
+      condition: (service) => service.product && service.product.includes('Node.js'),
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Node.js service detected - check for framework vulnerabilities'
+    },
+    {
+      condition: (service) => service.name === 'microsoft-ds' && service.product === '',
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'Windows file sharing service exposed'
+    },
+    {
+      condition: (service) => service.name === 'netbios-ssn',
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'NetBIOS service exposed - potential information disclosure'
+    },
+    {
+      condition: (service) => service.name === 'msrpc',
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Microsoft RPC service exposed'
+    }
+    , {
+      condition: (service) => service.name === 'mysql',
+      risk: 'HIGH',
+      points: 30,
+      description: 'MySQL database exposed - potential credential attacks'
+    },
+    {
+      condition: (service) => service.name === 'hotline' || service.name === 'unknown',
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'Uncommon or unknown service - potential security risk'
+    },
+    {
+      condition: (service) => service.extrainfo && service.extrainfo.includes('too many connection errors'),
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Service blocking connections - potential misconfiguration'
+    }
+  ],
+
+  // Regras baseadas em configurações de serviço
+  CONFIG_RULES: [
+    {
+      condition: (service) => service.tunnel === 'ssl',
+      risk: 'LOW',
+      points: -5,
+      description: 'SSL/TLS encryption enabled'
+    },
+    {
+      condition: (service) => service.extrainfo && service.extrainfo.includes('weak'),
+      risk: 'HIGH',
+      points: 30,
+      description: 'Weak encryption or configuration detected'
+    }
+  ]
+};
+
+// --- Motor de Inferência do Sistema Especialista ---
+class RiskAssessmentExpert {
+  constructor(scanResults) {
+    this.scanResults = scanResults;
+    this.riskScore = 0;
+    this.findings = [];
+    this.finalRisk = 'LOW';
+  }
+
+  assessHost(host) {
+    let hostRiskScore = 0;
+    const hostFindings = [];
+
+    console.log(`🔍 [AI Risk Assessment] Analyzing host: ${host.host}`);
+
+    // Analisar cada porta do host
+    host.ports.forEach(port => {
+      const portNum = parseInt(port.port);
+      const service = port.service || {};
+
+      console.log(`   📊 Analyzing port ${portNum}: ${service.name} ${service.version}`);
+
+      // Aplicar regras de porta
+      RISK_RULES.PORT_RULES.forEach(rule => {
+        if (rule.condition(portNum, service)) {
+          hostRiskScore += rule.points;
+          hostFindings.push({
+            type: 'PORT_RISK',
+            port: port.port,
+            risk: rule.risk,
+            description: rule.description,
+            points: rule.points,
+            service: service.name,
+            evidence: `Port ${port.port} (${service.name})`
+          });
+          console.log(`     ⚠️  PORT RULE: ${rule.description} [${rule.points} points]`);
+        }
+      });
+
+      // Aplicar regras de serviço
+      RISK_RULES.SERVICE_RULES.forEach(rule => {
+        if (rule.condition(service)) {
+          hostRiskScore += rule.points;
+          hostFindings.push({
+            type: 'SERVICE_RISK',
+            port: port.port,
+            risk: rule.risk,
+            description: rule.description,
+            points: rule.points,
+            service: service.name,
+            version: service.version,
+            evidence: `${service.name} ${service.version}`
+          });
+          console.log(`     ⚠️  SERVICE RULE: ${rule.description} [${rule.points} points]`);
+        }
+      });
+
+      // Aplicar regras de configuração
+      RISK_RULES.CONFIG_RULES.forEach(rule => {
+        if (rule.condition(service)) {
+          hostRiskScore += rule.points;
+          hostFindings.push({
+            type: 'CONFIG_RISK',
+            port: port.port,
+            risk: rule.risk,
+            description: rule.description,
+            points: rule.points,
+            service: service.name,
+            evidence: service.extrainfo || service.tunnel || 'configuration'
+          });
+          console.log(`     ✅ CONFIG RULE: ${rule.description} [${rule.points} points]`);
+        }
+      });
+    });
+
+    // Determinar risco final baseado no score acumulado
+    const finalRisk = this.calculateFinalRisk(hostRiskScore);
+
+    console.log(`🎯 [AI Risk Assessment] ${host.host} - Final Score: ${hostRiskScore}, Risk: ${finalRisk}`);
+
+    return {
+      host: host.host,
+      hostname: host.hostname,
+      riskScore: hostRiskScore,
+      finalRisk: finalRisk,
+      findings: hostFindings,
+      openPorts: host.open_ports_count,
+      device_type: host.device_type,
+      assessment_timestamp: new Date().toISOString()
+    };
+  }
+
+  calculateFinalRisk(score) {
+    if (score >= 60) return 'CRITICAL';
+    if (score >= 40) return 'HIGH';
+    if (score >= 20) return 'MEDIUM';
+    if (score >= 10) return 'LOW';
+    return 'INFO';
+  }
+
+  // Avaliar todos os hosts do scan
+  assessAllHosts() {
+    const assessedHosts = this.scanResults.map(host => this.assessHost(host));
+
+    // Calcular estatísticas globais - CORRIGIDO
+    const hostsWithRisk = assessedHosts.filter(h => h.riskScore !== undefined);
+    const totalRiskScore = hostsWithRisk.reduce((sum, host) => sum + host.riskScore, 0);
+    const averageRiskScore = hostsWithRisk.length > 0 ? totalRiskScore / hostsWithRisk.length : 0;
+    const riskDistribution = this.calculateRiskDistribution(assessedHosts);
+
+    return {
+      assessedHosts,
+      summary: {
+        totalHosts: assessedHosts.length,
+        averageRiskScore: Math.round(averageRiskScore * 100) / 100,
+        riskDistribution,
+        overallRisk: this.calculateOverallRisk(assessedHosts),
+        totalFindings: assessedHosts.reduce((sum, host) => sum + (host.findings ? host.findings.length : 0), 0)
+      }
+    };
+  }
+
+  calculateRiskDistribution(hosts) {
+    const distribution = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0
+    };
+
+    hosts.forEach(host => {
+      if (host.finalRisk && distribution.hasOwnProperty(host.finalRisk)) {
+        distribution[host.finalRisk]++;
+      }
+    });
+
+    return distribution;
+  }
+
+  calculateOverallRisk(hosts) {
+    if (!hosts || hosts.length === 0) return 'UNKNOWN';
+
+    const riskWeights = {
+      CRITICAL: 5,
+      HIGH: 4,
+      MEDIUM: 3,
+      LOW: 2,
+      INFO: 1
+    };
+
+    const weightedSum = hosts.reduce((sum, host) => {
+      return host.finalRisk && riskWeights[host.finalRisk]
+        ? sum + riskWeights[host.finalRisk]
+        : sum;
+    }, 0);
+
+    const averageWeight = weightedSum / hosts.length;
+
+    if (averageWeight >= 4.5) return 'CRITICAL';
+    if (averageWeight >= 3.5) return 'HIGH';
+    if (averageWeight >= 2.5) return 'MEDIUM';
+    if (averageWeight >= 1.5) return 'LOW';
+    return 'INFO';
+  }
+
+  // Gerar recomendações baseadas nos findings
+  generateRecommendations(assessedHosts) {
+    const recommendations = [];
+
+    assessedHosts.forEach(host => {
+      host.findings.forEach(finding => {
+        if (finding.risk === 'HIGH' || finding.risk === 'CRITICAL') {
+          recommendations.push({
+            host: host.host,
+            priority: finding.risk,
+            issue: finding.description,
+            action: this.generateAction(finding),
+            port: finding.port
+          });
+        }
+      });
+    });
+
+    // Ordenar por prioridade
+    return recommendations.sort((a, b) => {
+      const priorityOrder = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+      return priorityOrder[b.priority] - priorityOrder[a.priority];
+    });
+  }
+
+  generateAction(finding) {
+    const actions = {
+      'SSH version outdated': 'Upgrade SSH to latest version and disable weak algorithms',
+      'HTTP without TLS': 'Implement HTTPS with valid certificate',
+      'Windows SMB services exposed': 'Restrict SMB access, disable if not needed',
+      'Telnet service exposed': 'Replace Telnet with SSH immediately',
+      'FTP service exposed': 'Use SFTP or FTPS instead of plain FTP',
+      'VMware Authentication Daemon vulnerable version': 'Update VMware tools to latest version',
+      'Node.js service detected': 'Update Node.js and dependencies, security audit'
+    };
+
+    return actions[finding.description.split(' - ')[0]] || 'Review configuration and apply security best practices';
+  }
+}
 
 function extractSampleIP(target) {
   console.log(`[Pre-scan] Extracting sample IP from: ${target}`);
@@ -495,11 +848,224 @@ function runNmap(args, target, presetName, scanId) {
   });
 }
 
+async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
+  try {
+    if (!xmlText || typeof xmlText !== 'string' || xmlText.trim() === '') {
+      console.warn('parseNetworkScanXml: empty xmlText');
+      return {
+        network: targetNetwork,
+        hosts: [],
+        totalHosts: 0,
+        activeHosts: 0,
+        parse_error: 'empty output'
+      };
+    }
+
+    console.log('Starting XML parsing, length:', xmlText.length);
+    const hasHostData = xmlText.includes('<host>') && xmlText.includes('</host>');
+    console.log('Has host data:', hasHostData);
+
+    if (!hasHostData) {
+      console.log('No host tags found in XML');
+      return {
+        network: targetNetwork,
+        hosts: [],
+        totalHosts: 0,
+        activeHosts: 0,
+        parse_error: 'no host data'
+      };
+    }
+
+    const result = await xml2js.parseStringPromise(xmlText, {
+      explicitArray: false,
+      mergeAttrs: false,
+      normalize: true,
+      trim: true,
+      strict: false
+    });
+
+    console.log('XML parsed successfully, root keys:', Object.keys(result || {}));
+
+    let hosts = [];
+
+    // Handle UPPERCASE structure from xml2js
+    if (result.NMAPRUN && result.NMAPRUN.HOST) {
+      console.log('Found hosts in NMAPRUN.HOST (UPPERCASE)');
+      hosts = Array.isArray(result.NMAPRUN.HOST) ? result.NMAPRUN.HOST : [result.NMAPRUN.HOST];
+    } else if (result.nmaprun && result.nmaprun.host) {
+      console.log('Found hosts in nmaprun.host (lowercase)');
+      hosts = Array.isArray(result.nmaprun.host) ? result.nmaprun.host : [result.nmaprun.host];
+    } else if (result.host) {
+      console.log('Found hosts in root.host');
+      hosts = Array.isArray(result.host) ? result.host : [result.host];
+    }
+
+    console.log(`Found ${hosts.length} hosts in XML structure`);
+
+    const ScanResults = [];
+
+    for (const hostObj of hosts) {
+      if (!hostObj) {
+        console.warn('Skipping empty host object');
+        continue;
+      }
+
+      console.log('Processing host object structure:', Object.keys(hostObj));
+
+      // Extract addresses - handle UPPERCASE structure
+      let ipv4 = 'unknown';
+      let mac = '';
+      let vendor = '';
+      let hostStatus = 'unknown';
+
+      // Extract status - handle UPPERCASE STATUS
+      if (hostObj.STATUS && hostObj.STATUS.$ && hostObj.STATUS.$.STATE) {
+        hostStatus = hostObj.STATUS.$.STATE;
+      }
+
+      // Extract addresses - handle UPPERCASE ADDRESS array
+      if (hostObj.ADDRESS) {
+        const addresses = Array.isArray(hostObj.ADDRESS) ? hostObj.ADDRESS : [hostObj.ADDRESS];
+
+        for (const addr of addresses) {
+          if (addr.$ && addr.$.ADDRTYPE === 'ipv4') {
+            ipv4 = addr.$.ADDR;
+          } else if (addr.$ && addr.$.ADDRTYPE === 'mac') {
+            mac = addr.$.ADDR;
+            vendor = addr.$.VENDOR || '';
+          }
+        }
+      }
+
+      // Extract hostname - handle UPPERCASE HOSTNAMES
+      let hostname = '';
+      if (hostObj.HOSTNAMES) {
+        // Check if it's empty (just whitespace) or has content
+        if (typeof hostObj.HOSTNAMES === 'string' && hostObj.HOSTNAMES.trim() === '') {
+          hostname = '';
+        } else if (hostObj.HOSTNAMES.HOSTNAME) {
+          const hostnames = Array.isArray(hostObj.HOSTNAMES.HOSTNAME)
+            ? hostObj.HOSTNAMES.HOSTNAME
+            : [hostObj.HOSTNAMES.HOSTNAME];
+
+          if (hostnames.length > 0 && hostnames[0].$ && hostnames[0].$.NAME) {
+            hostname = hostnames[0].$.NAME;
+          }
+        }
+      }
+
+      console.log(`Extracted - IP: ${ipv4}, Status: ${hostStatus}, MAC: ${mac}, Vendor: ${vendor}, Hostname: ${hostname || 'none'}`);
+
+      // === ADD THIS: CALL THE DEVICE CLASSIFIER ===
+      const deviceInfo = classifyDevice(ipv4, mac, vendor, hostname);
+      console.log(`🎯 CLASSIFICATION: ${deviceInfo.device_type} (${deviceInfo.device_category}) - Confidence: ${deviceInfo.confidence}`);
+
+      // Extract ports (quick scan won't have ports)
+      let portsArr = [];
+      if (hostObj.PORTS && hostObj.PORTS.PORT) {
+        portsArr = Array.isArray(hostObj.PORTS.PORT) ? hostObj.PORTS.PORT : [hostObj.PORTS.PORT];
+      }
+
+      const detectedPorts = portsArr.map(p => {
+        const service = p.SERVICE || {};
+        const state = p.STATE || {};
+
+        return {
+          port: p.PORTID || '',
+          protocol: p.PROTOCOL || 'tcp',
+          state: state.STATE || 'unknown',
+          state_reason: state.REASON || '',
+          service: {
+            name: service.NAME || 'unknown',
+            product: service.PRODUCT || '',
+            version: service.VERSION || '',
+            extrainfo: service.EXTRAINFO || '',
+            method: service.METHOD || 'table'
+          },
+          summary: `Port ${p.PORTID} ${state.STATE} - ${service.NAME || 'unknown'}`
+        };
+      });
+
+      const openPorts = detectedPorts.filter(p => p.state === 'open').length;
+
+      // === REPLACE the old device type detection with this ===
+      ScanResults.push({
+        host: ipv4,
+        hostname: hostname,
+        mac_address: mac,
+        vendor: vendor,
+        status: hostStatus,
+        ports: detectedPorts,
+        open_ports_count: openPorts,
+        foundVulns: [],
+        // Use the classified device info instead of the old deviceType
+        device_type: deviceInfo.device_type,
+        device_category: deviceInfo.device_category,
+        classification_confidence: deviceInfo.confidence,
+        classification_basis: deviceInfo.classification_basis,
+        scan_timestamp: new Date().toISOString()
+      });
+    }
+
+    const activeHosts = ScanResults.filter(host => host.status === 'up' || host.open_ports_count > 0);
+
+    console.log(`Final Results - Total Hosts: ${ScanResults.length}, Active Hosts: ${activeHosts.length}`);
+
+    if (ScanResults.length > 0) {
+      console.log('Host details:', ScanResults.map(h => ({
+        host: h.host,
+        hostname: h.hostname,
+        mac: h.mac_address,
+        vendor: h.vendor,
+        device_type: h.device_type,
+        device_category: h.device_category,
+        confidence: h.classification_confidence,
+        status: h.status
+      })));
+    }
+
+    return {
+      network: targetNetwork,
+      hosts: ScanResults,
+      totalHosts: ScanResults.length,
+      activeHosts: activeHosts.length,
+      openPortsTotal: ScanResults.reduce((sum, host) => sum + host.open_ports_count, 0),
+      vulnerabilitiesTotal: ScanResults.reduce((sum, host) => sum + host.foundVulns.length, 0),
+      device_types: [...new Set(ScanResults.map(h => h.device_type))],
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('Error parsing XML:', error);
+    console.error('Error stack:', error.stack);
+    return {
+      network: targetNetwork,
+      hosts: [],
+      totalHosts: 0,
+      activeHosts: 0,
+      openPortsTotal: 0,
+      vulnerabilitiesTotal: 0,
+      parse_error: error.message
+    };
+  }
+}
 // --- Fixed XML Parser with Device Classification ---
 async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdOrRef = null) {
   console.log('🎯 [parseDeepScanXml] FUNCTION CALLED - Starting XML parsing');
-  console.log(`📏 XML length: ${xmlText.length} chars`);
-  
+  console.log(`📏 XML length: ${xmlText?.length || 0} chars`);
+
+  // small helpers
+  const toArray = v => (v === undefined || v === null ? [] : (Array.isArray(v) ? v : [v]));
+  const get = (obj, ...keys) => {
+    for (const k of keys) {
+      if (!obj) continue;
+      if (obj[k] !== undefined) return obj[k];
+      const up = k.toUpperCase();
+      if (obj[up] !== undefined) return obj[up];
+    }
+    return undefined;
+  };
+
   try {
     if (!xmlText || typeof xmlText !== 'string' || xmlText.trim() === '') {
       console.warn('❌ [parseDeepScanXml] Empty XML text provided');
@@ -514,14 +1080,12 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
       };
     }
 
-    // FIX: Look for <host (with space) instead of <host>
     const hasHostStart = xmlText.includes('<host ');
     const hasHostEnd = xmlText.includes('</host>');
     console.log(`🔍 [parseDeepScanXml] XML contains <host : ${hasHostStart}`);
     console.log(`🔍 [parseDeepScanXml] XML contains </host>: ${hasHostEnd}`);
-    
+
     console.log('🔄 [parseDeepScanXml] Starting XML parsing with xml2js...');
-    
     const result = await xml2js.parseStringPromise(xmlText, {
       explicitArray: false,
       mergeAttrs: true,
@@ -533,7 +1097,6 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
     console.log('✅ [parseDeepScanXml] XML parsed successfully');
     console.log('📋 [parseDeepScanXml] Root object keys:', Object.keys(result));
 
-    // FIX: Handle both uppercase and lowercase root elements
     const root = result.nmaprun || result.NMAPRUN;
     if (!root) {
       console.log('❌ [parseDeepScanXml] No nmaprun/NMAPRUN found in parsed result');
@@ -551,9 +1114,7 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
 
     console.log('🔍 [parseDeepScanXml] Root element keys:', Object.keys(root));
 
-    // FIX: Handle both uppercase and lowercase host elements
     let hostsArray = [];
-    
     if (root.host || root.HOST) {
       const hostData = root.host || root.HOST;
       hostsArray = Array.isArray(hostData) ? hostData : [hostData];
@@ -579,64 +1140,77 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
         console.log(`\n🔍 [parseDeepScanXml] Processing host ${index + 1}/${hostsArray.length}`);
         console.log('📋 [parseDeepScanXml] Host object keys:', Object.keys(hostObj));
 
-        // FIX: Handle both uppercase and lowercase properties
-        const status = hostObj.status?.state || hostObj.STATUS?.STATE || 'unknown';
+        // status
+        const status = get(hostObj, 'status')?.state || get(hostObj, 'STATUS')?.STATE || 'unknown';
         console.log(`📊 [parseDeepScanXml] Host status: ${status}`);
 
-        // === ADDRESSES ===
+        // addresses
         let ipv4 = 'unknown', mac = '', vendor = '';
-        const addressesRaw = hostObj.address || hostObj.ADDRESS || [];
-        const addresses = Array.isArray(addressesRaw) ? addressesRaw : (addressesRaw ? [addressesRaw] : []);
-        
+        const addressesRaw = get(hostObj, 'address') || [];
+        const addresses = toArray(addressesRaw);
         console.log(`📍 [parseDeepScanXml] Found ${addresses.length} addresses`);
-        
+
         for (const addr of addresses) {
-          // FIX: Handle both uppercase and lowercase address properties
           const addrType = addr.addrtype || addr.ADDRTYPE;
           const addrVal = addr.addr || addr.ADDR;
           const addrVendor = addr.vendor || addr.VENDOR || '';
-          
           console.log(`   📍 Address: ${addrVal} (${addrType}) vendor: ${addrVendor}`);
-          
-          if (addrType === 'ipv4') {
-            ipv4 = addrVal;
-          } else if (addrType === 'mac') {
+
+          if (addrType === 'ipv4') ipv4 = addrVal;
+          else if (addrType === 'mac') {
             mac = addrVal;
             vendor = vendor || addrVendor;
           }
         }
 
-        // === HOSTNAMES ===
+        // hostnames
         let hostname = '';
-        const hostnamesRaw = hostObj.hostnames || hostObj.HOSTNAMES || {};
-        
-        if (hostnamesRaw.hostname || hostnamesRaw.HOSTNAME) {
-          const hostnameData = hostnamesRaw.hostname || hostnamesRaw.HOSTNAME;
-          const hostnamesList = Array.isArray(hostnameData) ? hostnameData : [hostnameData];
-          if (hostnamesList.length > 0) {
-            const firstHostname = hostnamesList[0];
-            hostname = firstHostname.name || firstHostname.NAME || '';
-            console.log(`🏷️  [parseDeepScanXml] Found hostname: ${hostname}`);
-          }
+        const hostnamesRaw = get(hostObj, 'hostnames') || get(hostObj, 'HOSTNAMES') || {};
+        const hostnameData = hostnamesRaw.hostname || hostnamesRaw.HOSTNAME;
+        const hostnamesList = toArray(hostnameData);
+        if (hostnamesList.length > 0) {
+          const firstHostname = hostnamesList[0];
+          hostname = firstHostname.name || firstHostname.NAME || '';
+          console.log(`🏷️  [parseDeepScanXml] Found hostname: ${hostname}`);
         }
 
-        // === PORTS ===
-        let portsArr = [];
-        const portsRoot = hostObj.ports || hostObj.PORTS || {};
-        
-        if (portsRoot.port || portsRoot.PORT) {
-          const portData = portsRoot.port || portsRoot.PORT;
-          portsArr = Array.isArray(portData) ? portData : [portData];
-          console.log(`🔌 [parseDeepScanXml] Found ${portsArr.length} ports`);
-        }
+        // Prepare hostResult early so scripts/ports can push into it
+        const deviceInfo = classifyDevice(ipv4, mac, vendor, hostname);
+        const hostResult = {
+          host: ipv4,
+          hostname: hostname || '',
+          mac_address: mac || '',
+          vendor: vendor || '',
+          status,
+          ports: [],
+          open_ports_count: 0,
+          foundVulns: [],
+          banner: '',
+          device_type: deviceInfo.device_type,
+          device_category: deviceInfo.device_category,
+          classification_confidence: deviceInfo.confidence,
+          classification_basis: deviceInfo.classification_basis,
+          scan_timestamp: new Date().toISOString(),
+          scan_type: 'deep_scan'
+        };
 
-        const detectedPorts = portsArr.map(p => {
-          // FIX: Handle both uppercase and lowercase port properties
+        // ports (only parse ports if present)
+        const portsRoot = get(hostObj, 'ports') || get(hostObj, 'PORTS') || {};
+        const portData = portsRoot.port || portsRoot.PORT;
+        const portsArr = toArray(portData);
+        console.log(`🔌 [parseDeepScanXml] Found ${portsArr.length} raw port entries`);
+
+        for (const p of portsArr) {
+          // normalize state
+          const stateObj = p.state || p.STATE || {};
+          const state_state = stateObj.state || stateObj.STATE || (typeof stateObj === 'string' ? stateObj : 'unknown');
+
+          // only keep open ports (you already filtered earlier, but keep defensive)
+          if (state_state !== 'open') continue;
+
           const portid = p.portid || p.PORTID || '';
           const protocol = p.protocol || p.PROTOCOL || 'tcp';
-          
-          const stateObj = p.state || p.STATE || {};
-          const state_state = stateObj.state || stateObj.STATE || 'unknown';
+
           const state_reason = stateObj.reason || stateObj.REASON || '';
           const state_reason_ttl = stateObj.reason_ttl || stateObj.REASON_TTL || '';
 
@@ -653,45 +1227,46 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
             tunnel: serviceObj.tunnel || serviceObj.TUNNEL || ''
           };
 
-          console.log(`   🔌 Port ${portid}: ${state_state} - ${service.name} ${service.version}`);
+          // scripts: can be object or array
+          const scriptsRaw = p.script || p.SCRIPT || [];
+          const scriptsArr = toArray(scriptsRaw);
+          const parsedScripts = scriptsArr.map(s => ({
+            id: s.id || s.ID || '',
+            output: s.output || s.OUTPUT || ''
+          }));
 
-          return {
+          // collect vulns and banners from scripts
+          for (const s of parsedScripts) {
+            if (!s.id) continue;
+            // vulnerability scripts often include 'vuln' or cve ids in output; store raw
+            if (s.output && /cve|vulnerab|exploit|CVE-/i.test(s.output)) {
+              hostResult.foundVulns.push({ id: s.id, output: s.output });
+            }
+            // banner-like script ids often include 'banner' or 'http-title' etc.
+            if (/banner|http-title|server|product|fingerprint/i.test(s.id) || /server|title|banner/i.test(s.output)) {
+              hostResult.banner += (s.output || '') + '\n';
+            }
+          }
+
+          // also check service.product/version for likely CVE mapping later (optional)
+          // push port result
+          const portRecord = {
             port: portid,
             protocol,
             state: state_state,
             state_reason,
             state_reason_ttl,
             service,
-            scripts: p.script || p.SCRIPT || {},
-            banner: '',
+            scripts: parsedScripts,
             summary: `Port ${portid} ${state_state} - ${service.name} ${service.version}`.trim()
           };
-        });
 
-        const openPorts = detectedPorts.filter(p => p.state === 'open').length;
+          hostResult.ports.push(portRecord);
+        }
 
-        // === DEVICE CLASSIFICATION ===
-        const deviceInfo = classifyDevice(ipv4, mac, vendor, hostname);
+        hostResult.open_ports_count = hostResult.ports.length;
 
-        // Build host result
-        const hostResult = {
-          host: ipv4,
-          hostname: hostname || '',
-          mac_address: mac || '',
-          vendor: vendor || '',
-          status,
-          ports: detectedPorts,
-          open_ports_count: openPorts,
-          foundVulns: [],
-          device_type: deviceInfo.device_type,
-          device_category: deviceInfo.device_category,
-          classification_confidence: deviceInfo.confidence,
-          classification_basis: deviceInfo.classification_basis,
-          scan_timestamp: new Date().toISOString(),
-          scan_type: 'deep_scan'
-        };
-
-        console.log(`✅ [parseDeepScanXml] Successfully parsed host: ${ipv4} with ${openPorts} open ports`);
+        console.log(`✅ [parseDeepScanXml] Successfully parsed host: ${ipv4} with ${hostResult.open_ports_count} open ports and ${hostResult.foundVulns.length} script vulns`);
         ScanResults.push(hostResult);
 
       } catch (hostError) {
@@ -700,7 +1275,6 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
     }
 
     console.log(`\n🎉 [parseDeepScanXml] COMPLETED: ${ScanResults.length} hosts parsed successfully`);
-    
     const activeHosts = ScanResults.filter(h => h.status === 'up' || h.open_ports_count > 0);
 
     return {
@@ -730,6 +1304,7 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
     };
   }
 }
+
 
 
 
@@ -782,105 +1357,9 @@ async function storeQuickScanResults(scanId, parsed, runResult, preset, userId =
 }
 
 
-// Add this helper function for security metrics
-function calculateSecurityMetrics(hosts) {
-  let vulnerabilities = 0;
-  let highRiskPorts = 0;
-  let unusualServices = 0;
 
-  const riskPorts = [21, 23, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5900, 5985, 5986];
-  const unusualServicesList = ['vmware-auth', 'unknown', 'unusual-port'];
 
-  hosts.forEach(host => {
-    host.ports.forEach(port => {
-      // Count vulnerabilities from scripts
-      if (port.scripts) {
-        Object.values(port.scripts).forEach(output => {
-          if (output.toLowerCase().includes('vulnerable') ||
-            output.toLowerCase().includes('exploit') ||
-            output.toLowerCase().includes('cve')) {
-            vulnerabilities++;
-          }
-        });
-      }
 
-      // Count high risk ports
-      if (riskPorts.includes(parseInt(port.port)) && port.state === 'open') {
-        highRiskPorts++;
-      }
-
-      // Count unusual services
-      if (unusualServicesList.includes(port.service.name) && port.state === 'open') {
-        unusualServices++;
-      }
-    });
-  });
-
-  return {
-    vulnerabilities,
-    high_risk_ports: highRiskPorts,
-    unusual_services: unusualServices,
-    overall_risk_level: calculateRiskLevel(vulnerabilities, highRiskPorts)
-  };
-}
-
-function calculateRiskLevel(vulns, riskPorts) {
-  const score = vulns * 10 + riskPorts * 5;
-  if (score >= 20) return 'HIGH';
-  if (score >= 10) return 'MEDIUM';
-  if (score >= 5) return 'LOW';
-  return 'VERY_LOW';
-}
-
-// Add this helper function for security metrics
-function calculateSecurityMetrics(hosts) {
-  let vulnerabilities = 0;
-  let highRiskPorts = 0;
-  let unusualServices = 0;
-
-  const riskPorts = [21, 23, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5900, 5985, 5986];
-  const unusualServicesList = ['vmware-auth', 'unknown', 'unusual-port'];
-
-  hosts.forEach(host => {
-    host.ports.forEach(port => {
-      // Count vulnerabilities from scripts
-      if (port.scripts) {
-        Object.values(port.scripts).forEach(output => {
-          if (output.toLowerCase().includes('vulnerable') ||
-            output.toLowerCase().includes('exploit') ||
-            output.toLowerCase().includes('cve')) {
-            vulnerabilities++;
-          }
-        });
-      }
-
-      // Count high risk ports
-      if (riskPorts.includes(parseInt(port.port)) && port.state === 'open') {
-        highRiskPorts++;
-      }
-
-      // Count unusual services
-      if (unusualServicesList.includes(port.service.name) && port.state === 'open') {
-        unusualServices++;
-      }
-    });
-  });
-
-  return {
-    vulnerabilities,
-    high_risk_ports: highRiskPorts,
-    unusual_services: unusualServices,
-    overall_risk_level: calculateRiskLevel(vulnerabilities, highRiskPorts)
-  };
-}
-
-function calculateRiskLevel(vulns, riskPorts) {
-  const score = vulns * 10 + riskPorts * 5;
-  if (score >= 20) return 'HIGH';
-  if (score >= 10) return 'MEDIUM';
-  if (score >= 5) return 'LOW';
-  return 'VERY_LOW';
-}
 
 
 // --------------------------------------------------
@@ -890,6 +1369,10 @@ function calculateRiskLevel(vulns, riskPorts) {
 
 // --- Express API Setup ---
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+io.sockets.setMaxListeners(40);
+require('events').EventEmitter.defaultMaxListeners = 40;
 app.use(bodyParser.json());
 
 // List available scan presets
@@ -1324,6 +1807,17 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
   console.log(`[DEBUG] userId: ${userId}, targetId: ${targetId}`);
   console.log(`[DEBUG] Number of hosts to store: ${parsed.hosts ? parsed.hosts.length : 0}`);
 
+  // === NOVO: EXECUTAR AVALIAÇÃO DE RISCO COM AI ===
+  console.log(`[AI] Starting risk assessment for ${parsed.hosts.length} hosts...`);
+  const riskExpert = new RiskAssessmentExpert(parsed.hosts);
+  const riskAssessment = riskExpert.assessAllHosts();
+  const recommendations = riskExpert.generateRecommendations(riskAssessment.assessedHosts);
+
+  console.log(`[AI] Risk assessment completed:`);
+  console.log(`[AI] - Overall Risk: ${riskAssessment.summary.overallRisk}`);
+  console.log(`[AI] - Total Findings: ${riskAssessment.summary.totalFindings}`);
+  console.log(`[AI] - Recommendations: ${recommendations.length}`);
+
   // Check if we have hosts to process
   if (!parsed.hosts || !Array.isArray(parsed.hosts) || parsed.hosts.length === 0) {
     console.log('[DEBUG] No hosts to store, exiting function');
@@ -1339,6 +1833,9 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
 
       const scanResultRef = db.collection('ScanResults').doc();
       console.log(`[DEBUG] Created document reference: ${scanResultRef.id}`);
+
+      // Encontrar a avaliação de risco correspondente para este host
+      const hostRiskAssessment = riskAssessment.assessedHosts.find(h => h.host === hostResult.host);
 
       // Handle userId reference safely
       let userRef = null;
@@ -1398,7 +1895,6 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
             cpe: p.service?.cpe || '',
             tunnel: p.service?.tunnel || ''
           },
-          scripts: p.scripts || {},
           banner: p.banner || '',
           summary: p.summary || ''
         };
@@ -1428,6 +1924,15 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
         tcp_sequence: hostResult.tcpsequence || null,
         ipid_sequence: hostResult.ipidsequence || null,
         security_metrics: parsed.security_metrics || {},
+
+        // === NOVO: DADOS DA AVALIAÇÃO DE RISCO AI ===
+        risk_assessment: hostRiskAssessment ? {
+          riskScore: hostRiskAssessment.riskScore,
+          finalRisk: hostRiskAssessment.finalRisk,
+          findings: hostRiskAssessment.findings,
+          assessment_timestamp: hostRiskAssessment.assessment_timestamp
+        } : null,
+
         created_at: admin.firestore.FieldValue.serverTimestamp(),
         network_scan: false,
         parent_scan_id: scanId,
@@ -1445,6 +1950,7 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
 
       storedCount++;
       console.log(`✅ Successfully stored deep scan result for ${hostResult.host} with ${hostResult.open_ports_count || 0} open ports`);
+      console.log(`🎯 [AI] Risk assessment: ${hostRiskAssessment?.finalRisk || 'UNKNOWN'} (Score: ${hostRiskAssessment?.riskScore || 0})`);
 
     } catch (hostError) {
       errorCount++;
@@ -1457,7 +1963,61 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
     }
   }
 
-  console.log(`[DEBUG storeDeepScanResults] Completed: ${storedCount} stored, ${errorCount} errors`);
+  // === NOVO: GUARDAR SUMÁRIO DA AVALIAÇÃO DE RISCO NO SCAN PRINCIPAL ===
+  try {
+    const scanRef = db.collection('Scan').doc(scanId);
+    const scanDoc = await scanRef.get();
+
+    if (scanDoc.exists) {
+      const currentData = scanDoc.data();
+
+      // Debug: ver o que temos atualmente
+      console.log(`[AI DEBUG] Current scan summary:`, currentData.summary);
+      console.log(`[AI DEBUG] Risk assessment to store:`, riskAssessment.summary);
+
+      // Criar novo summary com merge
+      const updatedSummary = {
+        ...(currentData.summary || {}), // mantém dados existentes
+        risk_assessment: riskAssessment.summary,
+        recommendations: recommendations.slice(0, 10),
+        overall_security_rating: riskAssessment.summary.overallRisk
+      };
+
+      console.log(`[AI DEBUG] Final summary to save:`, updatedSummary);
+
+      // Atualizar apenas o campo summary
+      await safeFirestoreUpdate(scanRef, {
+        summary: updatedSummary
+      });
+
+      console.log(`[AI] ✅ Risk assessment summary stored successfully in scan document`);
+    } else {
+      console.error(`[AI] ❌ Scan document ${scanId} does not exist`);
+    }
+  } catch (updateError) {
+    console.error(`[AI] ❌ Failed to store risk assessment summary:`, updateError.message);
+
+    // Fallback: tentar método direto
+    try {
+      console.log(`[AI] 🔄 Trying direct Firestore update as fallback...`);
+      await db.collection('Scan').doc(scanId).update({
+        'summary.risk_assessment': riskAssessment.summary,
+        'summary.recommendations': recommendations.slice(0, 10),
+        'summary.overall_security_rating': riskAssessment.summary.overallRisk
+      });
+      console.log(`[AI] ✅ Risk assessment stored via direct Firestore update`);
+    } catch (directError) {
+      console.error(`[AI] ❌ Direct update also failed:`, directError.message);
+
+      // Último fallback: log completo para debug
+      console.log(`[AI FINAL DEBUG] Data that failed to save:`, {
+        risk_assessment: riskAssessment.summary,
+        recommendations_count: recommendations.length,
+        overall_risk: riskAssessment.summary.overallRisk,
+        risk_distribution: riskAssessment.summary.riskDistribution
+      });
+    }
+  }
 }
 // Helper function to extract sample IPs from list for display
 function extractSampleIPsFromList(ipList) {
@@ -1514,6 +2074,140 @@ function generateScanMessage(scanMode, targets, targetHosts) {
       return 'Deep scan started';
   }
 }
+
+// Get detailed risk analysis for a scan - VERSÃO CORRIGIDA
+app.get('/scan/:scanId/risk-analysis', async (req, res) => {
+  try {
+    const scanId = req.params.scanId;
+    
+    // Get all ScanResults for this scan with risk assessment
+    const resultsSnap = await db.collection('ScanResults')
+      .where('parent_scan_id', '==', scanId)
+      .get();
+
+    if (resultsSnap.empty) {
+      return res.status(404).json({ error: 'No scan results found' });
+    }
+
+    const ScanResults = resultsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // CALCULAR risk_summary A PARTIR DOS HOSTS INDIVIDUAIS
+    const hostsWithRisk = ScanResults.filter(r => r.risk_assessment);
+    
+    // Calcular estatísticas
+    const totalRiskScore = hostsWithRisk.reduce((sum, host) => sum + (host.risk_assessment.riskScore || 0), 0);
+    const averageRiskScore = hostsWithRisk.length > 0 ? totalRiskScore / hostsWithRisk.length : 0;
+    
+    // Calcular risk distribution
+    const riskDistribution = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0
+    };
+    
+    hostsWithRisk.forEach(host => {
+      const riskLevel = host.risk_assessment.finalRisk;
+      if (riskDistribution.hasOwnProperty(riskLevel)) {
+        riskDistribution[riskLevel]++;
+      }
+    });
+
+    // Calcular overall risk
+    const calculateOverallRisk = () => {
+      if (hostsWithRisk.length === 0) return 'UNKNOWN';
+      
+      const riskWeights = {
+        CRITICAL: 5,
+        HIGH: 4,
+        MEDIUM: 3,
+        LOW: 2,
+        INFO: 1
+      };
+      
+      const weightedSum = hostsWithRisk.reduce((sum, host) => {
+        return sum + (riskWeights[host.risk_assessment.finalRisk] || 1);
+      }, 0);
+      
+      const averageWeight = weightedSum / hostsWithRisk.length;
+      
+      if (averageWeight >= 4.5) return 'CRITICAL';
+      if (averageWeight >= 3.5) return 'HIGH';
+      if (averageWeight >= 2.5) return 'MEDIUM';
+      if (averageWeight >= 1.5) return 'LOW';
+      return 'INFO';
+    };
+
+    // Extrair recomendações
+    const recommendations = [];
+    hostsWithRisk.forEach(host => {
+      host.risk_assessment.findings?.forEach(finding => {
+        if (finding.risk === 'HIGH' || finding.risk === 'CRITICAL') {
+          recommendations.push({
+            host: host.host,
+            priority: finding.risk,
+            issue: finding.description,
+            action: generateActionFromFinding(finding),
+            port: finding.port
+          });
+        }
+      });
+    });
+
+    // Helper function para ações
+    function generateActionFromFinding(finding) {
+      const actions = {
+        'SSH version outdated': 'Upgrade SSH to latest version',
+        'HTTP without TLS': 'Implement HTTPS with valid certificate',
+        'Windows SMB services exposed': 'Restrict SMB access',
+        'MySQL database exposed': 'Secure MySQL with strong passwords and firewall rules',
+        'Node.js service detected': 'Update Node.js and dependencies',
+        'Uncommon or unknown service': 'Investigate and secure unknown service',
+        'Service blocking connections': 'Fix service configuration'
+      };
+      
+      return actions[finding.description.split(' - ')[0]] || 'Review configuration and apply security best practices';
+    }
+
+    const risk_summary = {
+      totalHosts: hostsWithRisk.length,
+      averageRiskScore: Math.round(averageRiskScore * 100) / 100,
+      riskDistribution,
+      overallRisk: calculateOverallRisk(),
+      totalFindings: hostsWithRisk.reduce((sum, host) => sum + (host.risk_assessment.findings?.length || 0), 0)
+    };
+
+    res.json({
+      scan_id: scanId,
+      risk_summary, // ✅ AGORA CALCULADO A PARTIR DOS HOSTS REAIS
+      recommendations: recommendations.sort((a, b) => {
+        const priorityOrder = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+        return priorityOrder[b.priority] - priorityOrder[a.priority];
+      }),
+      hosts: hostsWithRisk.map(h => ({
+        host: h.host,
+        hostname: h.hostname,
+        device_type: h.device_type,
+        risk_assessment: h.risk_assessment,
+        open_ports: h.open_ports_count
+      })),
+      detailed_findings: hostsWithRisk.flatMap(h => 
+        (h.risk_assessment.findings || []).map(f => ({
+          host: h.host,
+          ...f
+        }))
+      )
+    });
+
+  } catch (err) {
+    console.error('Error getting risk analysis:', err);
+    res.status(500).json({ error: 'Failed to get risk analysis', details: err.message });
+  }
+});
 
 app.post('/targets/add-selected', async (req, res) => {
   try {
