@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,6 +12,7 @@
 
   <link rel="stylesheet" href="dashboard.css" />
 </head>
+
 <body>
 
   <!-- Topbar -->
@@ -150,8 +152,8 @@
 
             <div class="gauge">
               <svg class="gauge-svg" viewBox="0 0 120 70" aria-hidden="true">
-                <path id="g-track" class="g-track" d="M10,60 A50,50 0 0 1 110,60"/>
-                <path id="g-bar" class="g-bar"   d="M10,60 A50,50 0 0 1 110,60"/>
+                <path id="g-track" class="g-track" d="M10,60 A50,50 0 0 1 110,60" />
+                <path id="g-bar" class="g-bar" d="M10,60 A50,50 0 0 1 110,60" />
               </svg>
               <div class="g-value" id="sr-ports-text">0/0</div>
               <div class="label">Open Ports</div>
@@ -258,14 +260,16 @@
 
           <div class="targets-empty" id="targets-empty">
             <h4>No targets saved yet.</h4>
-            <p class="muted">Add a host (IP/domain) or a network (CIDR). They’ll appear later as quick options on the Scan page — or you can always type the IP directly.</p>
+            <p class="muted">Add a host (IP/domain) or a network (CIDR). They’ll appear later as quick options on the
+              Scan page — or you can always type the IP directly.</p>
           </div>
 
           <div id="targets-list" class="targets-list"></div>
         </div>
 
         <!-- Add Target Popup -->
-        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog" aria-labelledby="iplist-modal-title">
+        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog"
+          aria-labelledby="iplist-modal-title">
           <div class="iplist-backdrop" data-close></div>
           <div class="iplist-dialog">
             <button class="iplist-close" data-close aria-label="Close">×</button>
@@ -287,7 +291,8 @@
 
               <div class="iplist-field">
                 <label class="iplist-label" for="iplist-value">Host/IP (or CIDR)</label>
-                <input id="iplist-value" class="iplist-input" placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
+                <input id="iplist-value" class="iplist-input"
+                  placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
                 <p class="iplist-help">IPv4, domain names, and CIDR ranges are accepted.</p>
               </div>
 
@@ -323,24 +328,29 @@
     </div>
   </div>
 
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
   <script src="Dashboard.js"></script>
   <script>
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const m = document.getElementById('modal-premium');
-        if (m) m.setAttribute('aria-hidden','true');
+        if (m) m.setAttribute('aria-hidden', 'true');
       }
     });
 
-  try{
-    if(!localStorage.getItem('vulnerai.auth')){
+    try {
+      if (!localStorage.getItem('vulnerai.auth')) {
+        window.location.replace('login.html');
+      }
+    } catch (e) {
       window.location.replace('login.html');
     }
-  }catch(e){
-    window.location.replace('login.html');
-  }
-</script>
+  </script>
 
   </script>
 </body>
+
 </html>

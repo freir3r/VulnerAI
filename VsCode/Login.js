@@ -67,7 +67,7 @@ form.addEventListener('submit', async (e) => {
         localStorage.setItem(AUTH_KEY, JSON.stringify({ uid: user.uid, email: user.email, ts: Date.now() }));
         
         // **REDIRECIONA APENAS AQUI**
-        window.location.href = 'dashboard.html';
+        window.location.href = 'index.html';
 
     } catch (error) {
         // Lida com erros do Firebase
