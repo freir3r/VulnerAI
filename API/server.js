@@ -16,14 +16,24 @@ const socketIo = require('socket.io');
 const PORT = process.env.PORT || 3000;
 
 // --- Firebase Initialization ---
-const serviceAccount = require('./keys/firebase-sa.json');
+let serviceAccount;
+try {
+  serviceAccount = require('./keys/firebase-sa.json');
+} catch (e) {
+  console.error("❌ ERRO CRÍTICO: O ficheiro './keys/firebase-sa.json' não foi encontrado!");
+  console.error("Certifica-te que o ficheiro está na pasta API/keys/ antes de iniciar o Docker.");
+  process.exit(1);
+}
+
 try {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined
   });
+  console.log('✅ Firebase initialized successfully via file.');
 } catch (e) {
-  console.error('Firebase init note:', e.message || e);
+  console.error('❌ Error during Firebase initialization:', e.message || e);
+  throw e;
 }
 
 const db = admin.firestore();
@@ -664,7 +674,7 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
 
   // ENHANCED CLASSIFICATION LOGIC WITH PRIORITY ORDER
   const classification = classifyByMultipleFactors(vendorLower, hostnameLower, macUpper, ipv4);
-  
+
   if (classification) {
     deviceType = classification.deviceType;
     deviceCategory = classification.deviceCategory;
@@ -702,18 +712,18 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
 function classifyRandomMac(macUpper) {
   // Apple iOS patterns (more comprehensive)
   const applePatterns = [
-    'F2:16:', 'F2:1A:', 'F2:12:', 'F2:01:', 'F2:16:F', 'F2:1A:5', 
+    'F2:16:', 'F2:1A:', 'F2:12:', 'F2:01:', 'F2:16:F', 'F2:1A:5',
     'F2:12:4', 'F2:01:F', 'F2:0A:', 'F2:1B:', 'F2:1C:', 'F2:1D:',
     'F2:1E:', 'F2:1F:', 'F2:20:', 'F2:21:', 'F2:22:', 'F2:23:'
   ];
-  
+
   // Android patterns
   const androidPatterns = [
     'F2:00:', 'F2:1D:', 'F2:16:DB', 'F2:00:E5', 'F2:00:9', 'F2:1D:0',
     'F2:02:', 'F2:03:', 'F2:04:', 'F2:05:', 'F2:06:', 'F2:07:',
     'F2:08:', 'F2:09:', 'F2:0B:', 'F2:0C:', 'F2:0D:', 'F2:0E:'
   ];
-  
+
   // Windows patterns
   const windowsPatterns = [
     'F2:24:', 'F2:25:', 'F2:26:', 'F2:27:', 'F2:28:', 'F2:29:'
@@ -724,13 +734,13 @@ function classifyRandomMac(macUpper) {
       return 'Apple Inc.';
     }
   }
-  
+
   for (const pattern of androidPatterns) {
     if (macUpper.startsWith(pattern)) {
       return 'Various Android Manufacturers';
     }
   }
-  
+
   for (const pattern of windowsPatterns) {
     if (macUpper.startsWith(pattern)) {
       return 'Microsoft Corporation';
@@ -814,7 +824,7 @@ function matchesNetworkInfrastructure(vendor, hostname) {
     'tplink', 'd-link', 'dlink', 'linksys', 'zyxel', 'sophos', 'watchguard',
     'sonicwall', 'meraki', 'a10', 'f5', 'citrix', 'barracuda'
   ];
-  
+
   const networkHostnamePatterns = [
     'router', 'switch', 'firewall', 'fw-', 'fw.', 'gateway', 'gw-', 'gw.',
     'core', 'dist', 'access', 'wlc', 'controller', 'ap-', 'ap.', 'wireless',
@@ -822,7 +832,7 @@ function matchesNetworkInfrastructure(vendor, hostname) {
   ];
 
   return networkVendors.some(v => vendor.includes(v)) ||
-         networkHostnamePatterns.some(pattern => hostname.includes(pattern));
+    networkHostnamePatterns.some(pattern => hostname.includes(pattern));
 }
 
 function matchesComputer(vendor, hostname) {
@@ -831,14 +841,14 @@ function matchesComputer(vendor, hostname) {
     'toshiba', 'fujitsu', 'samsung', 'lg', 'sony', 'panasonic',
     'intel', 'amd', 'supermicro', 'ibm', 'apple', 'macbook', 'imac'
   ];
-  
+
   const computerHostnamePatterns = [
     'pc-', 'laptop-', 'desktop-', 'workstation', 'server', 'srv-',
     'dc-', 'domain', 'win-', 'mac-', 'macbook', 'imac', 'thinkpad'
   ];
 
   return computerVendors.some(v => vendor.includes(v)) ||
-         computerHostnamePatterns.some(pattern => hostname.includes(pattern));
+    computerHostnamePatterns.some(pattern => hostname.includes(pattern));
 }
 
 function matchesMobileDevice(vendor, hostname, mac) {
@@ -847,17 +857,17 @@ function matchesMobileDevice(vendor, hostname, mac) {
     'realme', 'motorola', 'nokia', 'sony', 'lg', 'htc', 'huawei',
     'honor', 'meizu', 'zte', 'alcatel'
   ];
-  
+
   const mobileHostnamePatterns = [
     'iphone', 'ipad', 'android', 'samsung', 'galaxy', 'pixel',
     'oneplus', 'xiaomi', 'redmi', 'oppo', 'vivo'
   ];
 
   const isRandomMac = mac && (mac.startsWith('F2:') || mac.startsWith('F6:') || mac.startsWith('FA:'));
-  
+
   return mobileVendors.some(v => vendor.includes(v)) ||
-         mobileHostnamePatterns.some(pattern => hostname.includes(pattern)) ||
-         isRandomMac;
+    mobileHostnamePatterns.some(pattern => hostname.includes(pattern)) ||
+    isRandomMac;
 }
 
 function matchesIoTDevice(vendor, hostname) {
@@ -867,7 +877,7 @@ function matchesIoTDevice(vendor, hostname) {
     'tp-link', 'kasa', 'wemo', 'belkin', 'logitech', 'harmony',
     'roku', 'chromecast', 'fire tv', 'apple tv', 'sonos', 'bose'
   ];
-  
+
   const iotHostnamePatterns = [
     'raspberrypi', 'rpi-', 'arduino', 'iot-', 'smart-', 'sensor-',
     'camera', 'cam-', 'thermostat', 'hue', 'philips-hue', 'nest-',
@@ -876,7 +886,7 @@ function matchesIoTDevice(vendor, hostname) {
   ];
 
   return iotVendors.some(v => vendor.includes(v)) ||
-         iotHostnamePatterns.some(pattern => hostname.includes(pattern));
+    iotHostnamePatterns.some(pattern => hostname.includes(pattern));
 }
 
 function matchesPeripheral(vendor, hostname) {
@@ -885,14 +895,14 @@ function matchesPeripheral(vendor, hostname) {
     'ricoh', 'kyocera', 'sharp', 'konica', 'minolta', 'samsung',
     'logitech', 'microsoft', 'apple', 'dell', 'lenovo'
   ];
-  
+
   const peripheralHostnamePatterns = [
     'printer', 'print-', 'prn-', 'scanner', 'scan-', 'plotter',
     'mouse', 'keyboard', 'webcam', 'camera', 'speaker', 'headset'
   ];
 
   return peripheralVendors.some(v => vendor.includes(v)) ||
-         peripheralHostnamePatterns.some(pattern => hostname.includes(pattern));
+    peripheralHostnamePatterns.some(pattern => hostname.includes(pattern));
 }
 
 function matchesVirtualization(vendor, hostname) {
@@ -901,7 +911,7 @@ function matchesVirtualization(vendor, hostname) {
     'oracle', 'virtualbox', 'proxmox', 'xen', 'kvm', 'qemu',
     'docker', 'container', 'kubernetes'
   ];
-  
+
   const virtualizationHostnamePatterns = [
     'vm-', 'virtual-', 'esxi', 'vcenter', 'hyperv', 'xen-',
     'kvm-', 'docker', 'container', 'k8s', 'kubernetes',
@@ -909,13 +919,13 @@ function matchesVirtualization(vendor, hostname) {
   ];
 
   return virtualizationVendors.some(v => vendor.includes(v)) ||
-         virtualizationHostnamePatterns.some(pattern => hostname.includes(pattern));
+    virtualizationHostnamePatterns.some(pattern => hostname.includes(pattern));
 }
 
 // Device type specific functions
 function getNetworkDeviceType(vendor, hostname) {
-  if (vendor.includes('fortinet') || vendor.includes('fortigate') || 
-      vendor.includes('palo') || vendor.includes('checkpoint')) {
+  if (vendor.includes('fortinet') || vendor.includes('fortigate') ||
+    vendor.includes('palo') || vendor.includes('checkpoint')) {
     return 'Network Firewall';
   }
   if (vendor.includes('cisco') || vendor.includes('juniper') || vendor.includes('aruba')) {
