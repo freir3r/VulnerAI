@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulnerAI — IP List</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="iplist.css" />
+</head>
+
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button id="btn-burger" class="icon-btn" aria-label="Toggle menu">
+      <span class="i-burger"></span>
+    </button>
+
+    <div class="brand">
+      <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI" />
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-premium" class="btn-premium" title="Unlock Premium">★ Unlock Premium</button>
+
+      <div class="user-area">
+        <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
+          <img src="../Resources/Dashboard/Icon.png" class="avatar-icon" alt="User" />
+          <span class="avatar-caret">Down</span>
+        </button>
+        <div id="menu-user" class="menu" role="menu" aria-hidden="true">
+          <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
+          <button class="menu-item" role="menuitem" data-action="logout">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <a href="scans.html" class="btn-new">
+          <img class="ico" src="../Resources/Dashboard/New Scan Eye.png" alt="" /> <span>New Scan</span>
+        </a>
+      </div>
+
+      <div class="sidebar-section">Your Workspace</div>
+
+      <nav class="nav">
+        <a href="index.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/Home.png" alt="" /> <span>Home</span>
+        </a>
+        <a href="scans.html" class="nav-item">
+          <img class="ico" src="../Resources/Dashboard/Eye.png" alt="" /> <span>Scans</span>
+        </a>
+        <a href="iplist.html" class="nav-item active">
+          <img class="ico" src="../Resources/Dashboard/File.png" alt="" /> <span>IP List</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main id="main" class="main">
+      <div class="page-header">
+        <h1 id="page-title">IP List</h1>
+      </div>
+
+      <!-- IP LIST → TARGET PAGE -->
+      <section id="view-iplist" class="view active">
+        <div class="panel targets-panel">
+          <div class="panel-head">
+            <div class="ph-left">
+              <h3>Targets</h3>
+              <span class="muted" id="targets-count">0 saved</span>
+            </div>
+
+            <div class="toolbar">
+              <button id="iplist-open-add" class="btn-primary">+ Add Target</button>
+              <button id="iplist-import-csv" class="btn-secondary">↑ Import CSV</button>
+
+              <div class="search-wrap">
+                <input id="tgt-search" class="input" placeholder="Search targets…" />
+              </div>
+
+              <div class="sort-wrap">
+                <label class="muted small" for="tgt-sort">Sort by</label>
+                <select id="tgt-sort" class="input input-sm">
+                  <option value="recent" selected>Most recent</option>
+                  <option value="name">Name (A→Z)</option>
+                  <option value="scans">Scans (desc)</option>
+                  <option value="cves">CVEs (desc)</option>
+                </select>
+              </div>
+
+              <div class="sort-wrap">
+                <label class="muted small" for="tags-filter">Tag</label>
+                <select id="tags-filter" class="input input-sm">
+                  <option value="">All tags</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk" aria-hidden="true">
+            <div class="bulk-left">
+              <label class="chk"><input type="checkbox" id="tgt-checkall" /> <span>Select all</span></label>
+              <span class="muted small" id="tgt-selected">0 selected</span>
+            </div>
+            <div class="bulk-actions">
+              <button class="btn-secondary" id="tgt-bulk-scan">Scan selected</button>
+              <button class="btn-secondary" id="tgt-bulk-tags">Tag</button>
+              <button class="btn-secondary danger" id="tgt-bulk-delete">Delete</button>
+            </div>
+          </div>
+
+          <div class="targets-empty" id="targets-empty">
+            <h4>No targets saved yet.</h4>
+            <p class="muted">Add a host (IP/domain) or a network (CIDR). They'll appear later as quick options on the Scan page — or you can always type the IP directly.</p>
+          </div>
+
+          <div id="targets-list" class="targets-list"></div>
+        </div>
+
+        <!-- Add/Edit Target Popup -->
+        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog" aria-labelledby="iplist-modal-title">
+          <div class="iplist-backdrop" data-close></div>
+          <div class="iplist-dialog">
+            <button class="iplist-close" data-close aria-label="Close">×</button>
+            <h2 id="iplist-modal-title">Add Target</h2>
+
+            <form id="iplist-form" novalidate>
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-name">Name/Title</label>
+                <input id="iplist-name" class="iplist-input" placeholder='e.g., "Home PC (local)"' required />
+              </div>
+
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-kind">Type</label>
+                <select id="iplist-kind" class="iplist-input">
+                  <option value="host" selected>Host/IP</option>
+                  <option value="network">Network/CIDR</option>
+                </select>
+              </div>
+
+              <div class="iplist-field">
+                <label class="iplist-label" for="iplist-value">Host/IP (or CIDR)</label>
+                <input id="iplist-value" class="iplist-input" placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
+                <p class="iplist-help">IPv4, domain names, and CIDR ranges are accepted.</p>
+              </div>
+
+              <div class="iplist-actions">
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="submit" class="btn-primary">Save Target</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Premium Modal -->
+  <div id="modal-premium" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modal-premium-title">
+    <div class="backdrop" data-close></div>
+    <div class="dialog">
+      <button class="close" data-close aria-label="Close">×</button>
+      <h2 id="modal-premium-title">Unlock Premium</h2>
+      <p>Get advanced reports, scheduled scans, and unlimited history.</p>
+      <ul class="features">
+        <li>Scheduled scans</li>
+        <li>Full reports (PDF/CSV)</li>
+        <li>Alerts</li>
+      </ul>
+      <div class="actions">
+        <button class="btn-secondary" data-close>Later</button>
+        <button class="btn-primary" id="btn-upgrade">Upgrade — €9.99/month</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script src="iplist.js"></script>
+  <script>
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const m = document.getElementById('modal-premium');
+        if (m) m.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    try {
+      if (!localStorage.getItem('vulnerai.auth')) {
+        window.location.replace('login.html');
+      }
+    } catch (e) {
+      window.location.replace('login.html');
+    }
+  </script>
+</body>
+
+</html>

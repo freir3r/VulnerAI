@@ -2,7 +2,6 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
-
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -11,134 +10,85 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
 const xml2js = require('xml2js');
+const cors = require('cors');
 const socketIo = require('socket.io');
-
 
 const PORT = process.env.PORT || 3000;
 
 // --- Firebase Initialization ---
-const serviceAccount = require('./keys/firebase-sa.json');
+let serviceAccount;
+try {
+  serviceAccount = require('./keys/firebase-sa.json');
+} catch (e) {
+  console.error("❌ ERRO CRÍTICO: O ficheiro './keys/firebase-sa.json' não foi encontrado!");
+  console.error("Certifica-te que o ficheiro está na pasta API/keys/ antes de iniciar o Docker.");
+  process.exit(1);
+}
+
 try {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined
   });
+  console.log('✅ Firebase initialized successfully via file.');
 } catch (e) {
-  console.error('Firebase init note:', e.message || e);
+  console.error('❌ Error during Firebase initialization:', e.message || e);
+  throw e;
 }
 
 const db = admin.firestore();
-// Use this only when sending data to frontend, not when storing to Firestore
-function cleanForResponse(data) {
-  if (data === undefined || data === null) return null;
+function cleanFirestoreData(data, _seen = new WeakSet()) {
+  const seen = _seen || new WeakSet();
+  if (data === undefined || data === null) return '';
   if (typeof data !== 'object') return data;
+  if (seen.has(data)) return '[Circular]';
+  seen.add(data);
 
-  // Convert Firestore Timestamp to ISO string
-  if (typeof data.toDate === 'function') {
-    return data.toDate().toISOString();
+  // Handle Firestore DocumentReference
+  if (typeof data.path === 'string' && typeof data.id === 'string' && data.firestore) {
+    return {
+      _firestore_type: 'DocumentReference',
+      path: data.path,
+      id: data.id
+    };
   }
 
-  // Handle DocumentReference
-  if (data.path && data.id && data.firestore) {
-    return { path: data.path, id: data.id };
+  if (typeof data.toDate === 'function') {
+    try { return data.toDate().toISOString(); } catch (e) { }
   }
 
   if (Array.isArray(data)) {
-    return data.map(cleanForResponse);
+    return data.map(item =>
+      (typeof item === 'object' && item !== null) ? cleanFirestoreData(item, seen) : item
+    );
   }
 
   const cleaned = {};
   for (const [key, value] of Object.entries(data)) {
-    cleaned[key] = cleanForResponse(value);
+    try {
+      if (value === undefined || value === null) {
+        cleaned[key] = '';
+      } else if (typeof value === 'object') {
+        cleaned[key] = cleanFirestoreData(value, seen);
+      } else {
+        cleaned[key] = value;
+      }
+    } catch (e) {
+      cleaned[key] = `[Unserializable: ${e.message}]`;
+    }
   }
   return cleaned;
 }
 
 function safeFirestoreSet(docRef, data) {
-  const cleanedData = cleanForResponse(data);
+  const cleanedData = cleanFirestoreData(data);
   return docRef.set(cleanedData);
 }
 
 function safeFirestoreUpdate(docRef, data) {
-  const cleanedData = cleanForResponse(data);
+  const cleanedData = cleanFirestoreData(data);
   return docRef.update(cleanedData);
 }
-
-// --- Nmap Scan Presets ---
-const PRESETS = {
-  // Ultra Quick Scan: Just IPs and hostnames (30-60 seconds)
-  quick_scan: {
-    args: [
-
-      '-sn',
-      '-n',
-      '-T3',
-      '--max-retries', '2',
-      '--host-timeout', '1m',
-      '--min-parallelism', '20',
-      '-oX', '-',
-    ],
-    calculateTimeout: function (target) {
-      const hostCount = estimateHostCount(target);
-      const perHostTime = 1000; // 1 second per host (aggressive)
-      const baseTime = 20000; // 20 seconds base
-      return Math.min(baseTime + (hostCount * perHostTime), 500000); // Max 5 min
-    },
-    description: 'Fast network discovery - finds IPs, MAC addresses, hostnames, and device types',
-    category: 'network_discovery',
-    intensity: 'quick'
-  },
-
-  // Deep Scan: Unchanged
-  deep_scan: {
-    args: [
-      '-sS',                        // TCP SYN scan (fast, stealthy)
-      '-sV',
-      '-O',
-      '--osscan-limit',                        // Service/version detection
-      '--version-intensity', '5',   // Aggressive version detection
-      '--script-timeout', '40s',  // Script timeout
-      '--script', 'default,vuln,banner', // Focused scripts for CVEs and banners
-      '--top-ports', '1000',                        // Scan all ports
-      '-T4',                        // Faster timing for LAN/in-lab
-      '--min-rate', '700',          // Minimum packet rate
-      '--max-retries', '2',         // Avoid excessive retries
-      '--host-timeout', '10m',      // Timeout per host
-      '--open',                     // Show only open ports
-      '--reason',                   // Show reason why port is open/closed
-      '-PR',
-      '--system-dns',                // Use system DNS
-      '-R',
-      '-oX', '-'                     // Output in XML (can be parsed)
-    ],
-    calculateTimeout: function (target) {
-      const hostCount = estimateHostCount(target);
-      const perHostTime = 180000; // 3 minutes per host (deep scan optimized)
-      const baseTime = 60000;      // 1 minute base
-      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 min
-    },
-    description: 'Focused deep scan for open ports, service versions, and CVEs',
-    category: 'deep_scan',
-    intensity: 'high'
-  }
-
-};
-
-// Add this RIGHT AFTER the PRESETS object definition:
-// Ensure all presets have calculateTimeout method
-Object.values(PRESETS).forEach(preset => {
-  if (!preset.calculateTimeout || typeof preset.calculateTimeout !== 'function') {
-    console.warn(`Preset ${preset.description || 'unknown'} missing calculateTimeout, adding default`);
-    preset.calculateTimeout = function (target) {
-      const hostCount = estimateHostCount(target);
-      const baseTime = 60000; // 1 minute base
-      const perHostTime = 5000; // 5 seconds per host
-      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 minutes
-    };
-  }
-});
-
-// --- Helper Functions ---
 
 // --- AI Risk Assessment Expert System ---
 const RISK_RULES = {
@@ -197,7 +147,6 @@ const RISK_RULES = {
   // Regras baseadas em serviços específicos
   SERVICE_RULES: [
     {
-
       condition: (service) => service.name === 'vmware-auth' && service.version === '1.0',
       risk: 'HIGH',
       points: 35,
@@ -232,8 +181,8 @@ const RISK_RULES = {
       risk: 'MEDIUM',
       points: 15,
       description: 'Microsoft RPC service exposed'
-    }
-    , {
+    },
+    {
       condition: (service) => service.name === 'mysql',
       risk: 'HIGH',
       points: 30,
@@ -476,6 +425,79 @@ class RiskAssessmentExpert {
   }
 }
 
+// --- Nmap Scan Presets ---
+const PRESETS = {
+  // Ultra Quick Scan: Just IPs and hostnames (30-60 seconds)
+  quick_scan: {
+    args: [
+      '-sn',                   // Host discovery only
+      '-PR',                   // ARP discovery (this works!)
+      '-n',
+      '-oX', '-'
+    ],
+    calculateTimeout: function (target) {
+      const hostCount = estimateHostCount(target);
+      const perHostTime = 1000; // 1 second per host (aggressive)
+      const baseTime = 20000; // 20 seconds base
+      return Math.min(baseTime + (hostCount * perHostTime), 300000); // Max 5 min
+    },
+    description: 'Fast network discovery - finds IPs, MAC addresses, hostnames, and device types',
+    category: 'network_discovery',
+    intensity: 'quick'
+  },
+
+  // Deep Scan: Updated from file 2
+  deep_scan: {
+    args: [
+      '-sS',                        // TCP SYN scan (fast, stealthy)
+      '-sV',
+      '-O',
+      '--osscan-limit',                        // Service/version detection
+      '--version-intensity', '5',   // Aggressive version detection
+      '--script-timeout', '40s',  // Script timeout
+      '--script', 'default,vuln,banner', // Focused scripts for CVEs and banners
+      '--top-ports', '1000',                        // Scan all ports
+      '-T4',                        // Faster timing for LAN/in-lab
+      '--min-rate', '700',          // Minimum packet rate
+      '--max-retries', '2',         // Avoid excessive retries
+      '--host-timeout', '10m',      // Timeout per host
+      '--open',                     // Show only open ports
+      '--reason',                   // Show reason why port is open/closed
+      '-PR',
+      '--system-dns',                // Use system DNS
+      '-R',
+      '-oX', '-'                     // Output in XML (can be parsed)
+    ],
+    calculateTimeout: function (target) {
+      const hostCount = estimateHostCount(target);
+      const perHostTime = 180000; // 3 minutes per host (deep scan optimized)
+      const baseTime = 60000;      // 1 minute base
+      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 min
+    },
+    description: 'Focused deep scan for open ports, service versions, and CVEs',
+    category: 'deep_scan',
+    intensity: 'high'
+  }
+};
+
+// Add this RIGHT AFTER the PRESETS object definition:
+// Ensure all presets have calculateTimeout method
+Object.values(PRESETS).forEach(preset => {
+  if (!preset.calculateTimeout || typeof preset.calculateTimeout !== 'function') {
+    console.warn(`Preset ${preset.description || 'unknown'} missing calculateTimeout, adding default`);
+    preset.calculateTimeout = function (target) {
+      const hostCount = estimateHostCount(target);
+      const baseTime = 60000; // 1 minute base
+      const perHostTime = 5000; // 5 seconds per host
+      return Math.min(baseTime + (hostCount * perHostTime), 1800000); // Max 30 minutes
+    };
+  }
+});
+
+// --- Helper Functions ---
+
+// Add these helper functions right before your app.post('/scan'):
+
 function extractSampleIP(target) {
   console.log(`[Pre-scan] Extracting sample IP from: ${target}`);
 
@@ -604,9 +626,7 @@ function validateNetworkTarget(input) {
 function isAllowedTarget(target) {
   return true;
 }
-
 const { toVendor, isRandomMac } = require('@network-utils/vendor-lookup');
-
 function classifyDevice(ipv4, mac, vendor, hostname) {
   // Default classification
   let deviceType = 'Unknown Device';
@@ -614,15 +634,21 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
   let confidence = 'low';
   let detectedVendor = vendor;
   let classificationBasis = 'default';
+  const macUpper = mac ? mac.toUpperCase() : '';
 
-  // Use MAC lookup to enhance vendor information
+  // Enhanced vendor detection from MAC
   if (!vendor && mac) {
     try {
       // Check if it's a random MAC first
       if (isRandomMac(mac)) {
-        console.log(`[MAC Lookup] ${mac} is a random MAC address (mobile device privacy)`);
-        detectedVendor = 'Random MAC (Mobile Device)';
-        classificationBasis = 'random_mac';
+        detectedVendor = classifyRandomMac(macUpper);
+        if (detectedVendor !== 'Random MAC (Mobile Device)') {
+          classificationBasis = 'random_mac_pattern';
+          console.log(`📱 Mobile device detected: ${mac} → ${detectedVendor}`);
+        } else {
+          console.log(`[MAC Lookup] ${mac} is a random MAC address (mobile device privacy)`);
+          classificationBasis = 'random_mac';
+        }
       } else {
         const vendorResult = toVendor(mac);
         if (vendorResult && vendorResult !== '') {
@@ -642,112 +668,36 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
 
   // Convert to lowercase for easier matching
   const vendorLower = (detectedVendor || '').toLowerCase();
-  const macUpper = mac ? mac.toUpperCase() : '';
   const hostnameLower = (hostname || '').toLowerCase();
 
   console.log(`Classifying: IP=${ipv4}, MAC=${mac}, Vendor=${detectedVendor}, Hostname=${hostname}`);
 
-  // ENHANCED CLASSIFICATION LOGIC
-  if (vendorLower.includes('huawei')) {
-    deviceType = 'Network Router/Gateway';
-    deviceCategory = 'networking';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('fortinet') || vendorLower.includes('fortigate')) {
-    deviceType = 'Network Firewall';
-    deviceCategory = 'network_security';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('cisco') || vendorLower.includes('juniper') || vendorLower.includes('aruba')) {
-    deviceType = 'Network Switch/Router';
-    deviceCategory = 'networking';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('palo') && vendorLower.includes('alto')) {
-    deviceType = 'Network Firewall';
-    deviceCategory = 'network_security';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('dell') || vendorLower.includes('hp') || vendorLower.includes('lenovo') ||
-    vendorLower.includes('microsoft') || vendorLower.includes('asus') || vendorLower.includes('acer')) {
-    deviceType = 'Windows PC/Server';
-    deviceCategory = 'computer';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('apple')) {
-    deviceType = 'Apple Device';
-    deviceCategory = 'computer';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('vmware') || vendorLower.includes('parallels')) {
-    deviceType = 'Virtual Machine';
-    deviceCategory = 'virtualization';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('samsung') || vendorLower.includes('lg') || vendorLower.includes('sony')) {
-    deviceType = 'Smart Device/Phone';
-    deviceCategory = 'iot';
-    confidence = 'medium';
-  }
-  else if (vendorLower.includes('google') || vendorLower.includes('nest')) {
-    deviceType = 'Smart Home Device';
-    deviceCategory = 'iot';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('intel') || vendorLower.includes('broadcom') || vendorLower.includes('realtek')) {
-    deviceType = 'Network Interface Card';
-    deviceCategory = 'networking';
-    confidence = 'medium';
-  }
-  else if (vendorLower.includes('canon') || vendorLower.includes('epson') || vendorLower.includes('brother')) {
-    deviceType = 'Network Printer';
-    deviceCategory = 'peripheral';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('raspberry') || vendorLower.includes('arduino')) {
-    deviceType = 'Embedded/IoT Device';
-    deviceCategory = 'iot';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('netgear') || vendorLower.includes('tplink') || vendorLower.includes('d-link')) {
-    deviceType = 'Network Device';
-    deviceCategory = 'networking';
-    confidence = 'medium';
-  }
-  else if (vendorLower.includes('sagemcom')) {
-    deviceType = 'Network Router/Gateway';
-    deviceCategory = 'networking';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('asrock') || vendorLower.includes('micro-star')) {
-    deviceType = 'Computer Motherboard';
-    deviceCategory = 'computer';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('lg innotek')) {
-    deviceType = 'Smart Device/Phone';
-    deviceCategory = 'iot';
-    confidence = 'high';
-  }
-  else if (vendorLower.includes('random mac')) {
-    deviceType = 'Mobile Device (Random MAC)';
-    deviceCategory = 'mobile';
-    confidence = 'medium';
+  // ENHANCED CLASSIFICATION LOGIC WITH PRIORITY ORDER
+  const classification = classifyByMultipleFactors(vendorLower, hostnameLower, macUpper, ipv4);
+
+  if (classification) {
+    deviceType = classification.deviceType;
+    deviceCategory = classification.deviceCategory;
+    confidence = classification.confidence;
+    classificationBasis = classification.basis || classificationBasis;
   }
 
-  // Default classification based on available data
-  else if (!mac && !detectedVendor) {
-    deviceType = 'Unknown Host';
-    deviceCategory = 'unknown';
-    confidence = 'very-low';
-  }
-  else if (mac || detectedVendor) {
-    deviceType = 'Network Device';
-    deviceCategory = 'networking';
-    confidence = 'low';
+  // Fallback classifications
+  if (deviceType === 'Unknown Device') {
+    if (!mac && !detectedVendor) {
+      deviceType = 'Unknown Host';
+      deviceCategory = 'unknown';
+      confidence = 'very-low';
+      classificationBasis = 'no_identifying_data';
+    } else if (mac || detectedVendor) {
+      deviceType = 'Network Device';
+      deviceCategory = 'networking';
+      confidence = 'low';
+      classificationBasis = 'generic_mac_or_vendor';
+    }
   }
 
-  console.log(`🎯 CLASSIFICATION: ${deviceType} (${deviceCategory}) - Confidence: ${confidence}`);
+  console.log(`🎯 CLASSIFICATION: ${deviceType} (${deviceCategory}) - Confidence: ${confidence} - Basis: ${classificationBasis}`);
 
   return {
     device_type: deviceType,
@@ -756,6 +706,313 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
     vendor: detectedVendor,
     classification_basis: classificationBasis
   };
+}
+
+// Enhanced random MAC classification
+function classifyRandomMac(macUpper) {
+  // Apple iOS patterns (more comprehensive)
+  const applePatterns = [
+    'F2:16:', 'F2:1A:', 'F2:12:', 'F2:01:', 'F2:16:F', 'F2:1A:5',
+    'F2:12:4', 'F2:01:F', 'F2:0A:', 'F2:1B:', 'F2:1C:', 'F2:1D:',
+    'F2:1E:', 'F2:1F:', 'F2:20:', 'F2:21:', 'F2:22:', 'F2:23:'
+  ];
+
+  // Android patterns
+  const androidPatterns = [
+    'F2:00:', 'F2:1D:', 'F2:16:DB', 'F2:00:E5', 'F2:00:9', 'F2:1D:0',
+    'F2:02:', 'F2:03:', 'F2:04:', 'F2:05:', 'F2:06:', 'F2:07:',
+    'F2:08:', 'F2:09:', 'F2:0B:', 'F2:0C:', 'F2:0D:', 'F2:0E:'
+  ];
+
+  // Windows patterns
+  const windowsPatterns = [
+    'F2:24:', 'F2:25:', 'F2:26:', 'F2:27:', 'F2:28:', 'F2:29:'
+  ];
+
+  for (const pattern of applePatterns) {
+    if (macUpper.startsWith(pattern)) {
+      return 'Apple Inc.';
+    }
+  }
+
+  for (const pattern of androidPatterns) {
+    if (macUpper.startsWith(pattern)) {
+      return 'Various Android Manufacturers';
+    }
+  }
+
+  for (const pattern of windowsPatterns) {
+    if (macUpper.startsWith(pattern)) {
+      return 'Microsoft Corporation';
+    }
+  }
+
+  return 'Random MAC (Mobile Device)';
+}
+
+// Enhanced multi-factor classification
+function classifyByMultipleFactors(vendorLower, hostnameLower, macUpper, ipv4) {
+  // Network Infrastructure (Highest priority)
+  if (matchesNetworkInfrastructure(vendorLower, hostnameLower)) {
+    return {
+      deviceType: getNetworkDeviceType(vendorLower, hostnameLower),
+      deviceCategory: 'networking',
+      confidence: 'high',
+      basis: 'network_infrastructure'
+    };
+  }
+
+  // Computers and Servers
+  if (matchesComputer(vendorLower, hostnameLower)) {
+    return {
+      deviceType: getComputerType(vendorLower, hostnameLower),
+      deviceCategory: 'computer',
+      confidence: 'high',
+      basis: 'computer_hardware'
+    };
+  }
+
+  // Mobile Devices
+  if (matchesMobileDevice(vendorLower, hostnameLower, macUpper)) {
+    return {
+      deviceType: getMobileDeviceType(vendorLower, hostnameLower),
+      deviceCategory: 'mobile',
+      confidence: 'medium-high',
+      basis: 'mobile_device'
+    };
+  }
+
+  // IoT and Smart Devices
+  if (matchesIoTDevice(vendorLower, hostnameLower)) {
+    return {
+      deviceType: getIoTDeviceType(vendorLower, hostnameLower),
+      deviceCategory: 'iot',
+      confidence: 'medium',
+      basis: 'iot_device'
+    };
+  }
+
+  // Peripherals
+  if (matchesPeripheral(vendorLower, hostnameLower)) {
+    return {
+      deviceType: getPeripheralType(vendorLower, hostnameLower),
+      deviceCategory: 'peripheral',
+      confidence: 'high',
+      basis: 'peripheral_device'
+    };
+  }
+
+  // Virtualization
+  if (matchesVirtualization(vendorLower, hostnameLower)) {
+    return {
+      deviceType: getVirtualizationType(vendorLower, hostnameLower),
+      deviceCategory: 'virtualization',
+      confidence: 'high',
+      basis: 'virtualization'
+    };
+  }
+
+  return null;
+}
+
+// Enhanced matching functions
+function matchesNetworkInfrastructure(vendor, hostname) {
+  const networkVendors = [
+    'cisco', 'juniper', 'aruba', 'huawei', 'fortinet', 'fortigate',
+    'palo alto', 'paloalto', 'check point', 'checkpoint', 'brocade',
+    'extreme networks', 'ruckus', 'ubiquiti', 'mikrotik', 'netgear',
+    'tplink', 'd-link', 'dlink', 'linksys', 'zyxel', 'sophos', 'watchguard',
+    'sonicwall', 'meraki', 'a10', 'f5', 'citrix', 'barracuda'
+  ];
+
+  const networkHostnamePatterns = [
+    'router', 'switch', 'firewall', 'fw-', 'fw.', 'gateway', 'gw-', 'gw.',
+    'core', 'dist', 'access', 'wlc', 'controller', 'ap-', 'ap.', 'wireless',
+    'cisco', 'juniper', 'fortinet', 'palo', 'checkpoint'
+  ];
+
+  return networkVendors.some(v => vendor.includes(v)) ||
+    networkHostnamePatterns.some(pattern => hostname.includes(pattern));
+}
+
+function matchesComputer(vendor, hostname) {
+  const computerVendors = [
+    'dell', 'hp', 'hewlett', 'lenovo', 'microsoft', 'asus', 'acer',
+    'toshiba', 'fujitsu', 'samsung', 'lg', 'sony', 'panasonic',
+    'intel', 'amd', 'supermicro', 'ibm', 'apple', 'macbook', 'imac'
+  ];
+
+  const computerHostnamePatterns = [
+    'pc-', 'laptop-', 'desktop-', 'workstation', 'server', 'srv-',
+    'dc-', 'domain', 'win-', 'mac-', 'macbook', 'imac', 'thinkpad'
+  ];
+
+  return computerVendors.some(v => vendor.includes(v)) ||
+    computerHostnamePatterns.some(pattern => hostname.includes(pattern));
+}
+
+function matchesMobileDevice(vendor, hostname, mac) {
+  const mobileVendors = [
+    'apple', 'samsung', 'google', 'oneplus', 'xiaomi', 'oppo', 'vivo',
+    'realme', 'motorola', 'nokia', 'sony', 'lg', 'htc', 'huawei',
+    'honor', 'meizu', 'zte', 'alcatel'
+  ];
+
+  const mobileHostnamePatterns = [
+    'iphone', 'ipad', 'android', 'samsung', 'galaxy', 'pixel',
+    'oneplus', 'xiaomi', 'redmi', 'oppo', 'vivo'
+  ];
+
+  const isRandomMac = mac && (mac.startsWith('F2:') || mac.startsWith('F6:') || mac.startsWith('FA:'));
+
+  return mobileVendors.some(v => vendor.includes(v)) ||
+    mobileHostnamePatterns.some(pattern => hostname.includes(pattern)) ||
+    isRandomMac;
+}
+
+function matchesIoTDevice(vendor, hostname) {
+  const iotVendors = [
+    'raspberry', 'arduino', 'google', 'nest', 'amazon', 'echo', 'alexa',
+    'ring', 'philips', 'hue', 'smartthings', 'wyze', 'tuya', 'shelly',
+    'tp-link', 'kasa', 'wemo', 'belkin', 'logitech', 'harmony',
+    'roku', 'chromecast', 'fire tv', 'apple tv', 'sonos', 'bose'
+  ];
+
+  const iotHostnamePatterns = [
+    'raspberrypi', 'rpi-', 'arduino', 'iot-', 'smart-', 'sensor-',
+    'camera', 'cam-', 'thermostat', 'hue', 'philips-hue', 'nest-',
+    'alexa', 'echo', 'google-home', 'chromecast', 'roku', 'fire-tv',
+    'apple-tv', 'sonos', 'smartthings', 'wyze', 'tuya'
+  ];
+
+  return iotVendors.some(v => vendor.includes(v)) ||
+    iotHostnamePatterns.some(pattern => hostname.includes(pattern));
+}
+
+function matchesPeripheral(vendor, hostname) {
+  const peripheralVendors = [
+    'canon', 'epson', 'brother', 'hp', 'hewlett', 'xerox', 'lexmark',
+    'ricoh', 'kyocera', 'sharp', 'konica', 'minolta', 'samsung',
+    'logitech', 'microsoft', 'apple', 'dell', 'lenovo'
+  ];
+
+  const peripheralHostnamePatterns = [
+    'printer', 'print-', 'prn-', 'scanner', 'scan-', 'plotter',
+    'mouse', 'keyboard', 'webcam', 'camera', 'speaker', 'headset'
+  ];
+
+  return peripheralVendors.some(v => vendor.includes(v)) ||
+    peripheralHostnamePatterns.some(pattern => hostname.includes(pattern));
+}
+
+function matchesVirtualization(vendor, hostname) {
+  const virtualizationVendors = [
+    'vmware', 'parallels', 'microsoft', 'hyper-v', 'citrix',
+    'oracle', 'virtualbox', 'proxmox', 'xen', 'kvm', 'qemu',
+    'docker', 'container', 'kubernetes'
+  ];
+
+  const virtualizationHostnamePatterns = [
+    'vm-', 'virtual-', 'esxi', 'vcenter', 'hyperv', 'xen-',
+    'kvm-', 'docker', 'container', 'k8s', 'kubernetes',
+    'proxmox', 'pve'
+  ];
+
+  return virtualizationVendors.some(v => vendor.includes(v)) ||
+    virtualizationHostnamePatterns.some(pattern => hostname.includes(pattern));
+}
+
+// Device type specific functions
+function getNetworkDeviceType(vendor, hostname) {
+  if (vendor.includes('fortinet') || vendor.includes('fortigate') ||
+    vendor.includes('palo') || vendor.includes('checkpoint')) {
+    return 'Network Firewall';
+  }
+  if (vendor.includes('cisco') || vendor.includes('juniper') || vendor.includes('aruba')) {
+    if (hostname.includes('switch') || hostname.includes('sw-')) return 'Network Switch';
+    if (hostname.includes('router') || hostname.includes('rt-')) return 'Network Router';
+    if (hostname.includes('firewall') || hostname.includes('fw-')) return 'Network Firewall';
+    if (hostname.includes('wireless') || hostname.includes('wlc') || hostname.includes('ap-')) return 'Wireless Controller/Access Point';
+    return 'Network Switch/Router';
+  }
+  if (vendor.includes('ubiquiti') || vendor.includes('unifi')) {
+    if (hostname.includes('ap-')) return 'Wireless Access Point';
+    return 'Network Gateway/Router';
+  }
+  if (hostname.includes('ap-') || hostname.includes('access-point')) {
+    return 'Wireless Access Point';
+  }
+  if (hostname.includes('switch') || hostname.includes('sw-')) {
+    return 'Network Switch';
+  }
+  if (hostname.includes('router') || hostname.includes('rt-') || hostname.includes('gw-')) {
+    return 'Network Router/Gateway';
+  }
+  if (hostname.includes('firewall') || hostname.includes('fw-')) {
+    return 'Network Firewall';
+  }
+  return 'Network Infrastructure Device';
+}
+
+function getComputerType(vendor, hostname) {
+  if (vendor.includes('apple') || hostname.includes('mac')) {
+    return 'Apple Computer';
+  }
+  if (hostname.includes('server') || hostname.includes('srv-') || hostname.includes('dc-')) {
+    return 'Server';
+  }
+  if (hostname.includes('laptop') || hostname.includes('notebook')) {
+    return 'Laptop';
+  }
+  if (hostname.includes('workstation')) {
+    return 'Workstation';
+  }
+  return 'Desktop Computer';
+}
+
+function getMobileDeviceType(vendor, hostname) {
+  if (vendor.includes('apple') || hostname.includes('iphone') || hostname.includes('ipad')) {
+    return hostname.includes('ipad') ? 'Tablet (iPad)' : 'Smartphone (iPhone)';
+  }
+  if (vendor.includes('samsung') || hostname.includes('galaxy')) {
+    return hostname.includes('tab') ? 'Tablet (Samsung)' : 'Smartphone (Samsung)';
+  }
+  if (vendor.includes('google') || hostname.includes('pixel')) {
+    return 'Smartphone (Google Pixel)';
+  }
+  return hostname.includes('tablet') ? 'Tablet' : 'Smartphone';
+}
+
+function getIoTDeviceType(vendor, hostname) {
+  if (vendor.includes('raspberry')) return 'Raspberry Pi';
+  if (vendor.includes('arduino')) return 'Arduino Device';
+  if (vendor.includes('google') || vendor.includes('nest')) {
+    if (hostname.includes('thermostat')) return 'Smart Thermostat';
+    if (hostname.includes('speaker') || hostname.includes('home')) return 'Smart Speaker';
+    return 'Google Smart Device';
+  }
+  if (vendor.includes('amazon') || hostname.includes('echo') || hostname.includes('alexa')) {
+    return 'Amazon Echo Device';
+  }
+  if (hostname.includes('camera') || hostname.includes('cam-')) return 'IP Camera';
+  if (hostname.includes('sensor')) return 'IoT Sensor';
+  if (hostname.includes('thermostat')) return 'Smart Thermostat';
+  if (hostname.includes('light') || hostname.includes('bulb')) return 'Smart Light';
+  return 'IoT/Smart Device';
+}
+
+function getPeripheralType(vendor, hostname) {
+  if (hostname.includes('printer') || hostname.includes('print-')) return 'Network Printer';
+  if (hostname.includes('scanner')) return 'Scanner';
+  return 'Computer Peripheral';
+}
+
+function getVirtualizationType(vendor, hostname) {
+  if (vendor.includes('vmware')) return 'VMware Virtual Machine';
+  if (vendor.includes('microsoft') || hostname.includes('hyperv')) return 'Hyper-V Virtual Machine';
+  if (vendor.includes('virtualbox')) return 'VirtualBox VM';
+  if (hostname.includes('docker') || hostname.includes('container')) return 'Container';
+  return 'Virtual Machine';
 }
 
 function runNmap(args, target, presetName, scanId) {
@@ -848,6 +1105,7 @@ function runNmap(args, target, presetName, scanId) {
   });
 }
 
+// --- Fixed XML Parser with Device Classification ---
 async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
   try {
     if (!xmlText || typeof xmlText !== 'string' || xmlText.trim() === '') {
@@ -857,6 +1115,8 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
         hosts: [],
         totalHosts: 0,
         activeHosts: 0,
+        openPortsTotal: 0,
+        vulnerabilitiesTotal: 0,
         parse_error: 'empty output'
       };
     }
@@ -872,6 +1132,8 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
         hosts: [],
         totalHosts: 0,
         activeHosts: 0,
+        openPortsTotal: 0,
+        vulnerabilitiesTotal: 0,
         parse_error: 'no host data'
       };
     }
@@ -1049,7 +1311,8 @@ async function parseNetworkScanXml(xmlText, targetNetwork, preset) {
     };
   }
 }
-// --- Fixed XML Parser with Device Classification ---
+
+// --- Deep Scan XML Parser from File 2 ---
 async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdOrRef = null) {
   console.log('🎯 [parseDeepScanXml] FUNCTION CALLED - Starting XML parsing');
   console.log(`📏 XML length: ${xmlText?.length || 0} chars`);
@@ -1305,15 +1568,45 @@ async function parseDeepScanXml(xmlText, targetNetwork, uidRef = null, targetIdO
   }
 }
 
+// Store scan results in Firestore
+async function storeScanResults(scanId, parsed, runResult, preset) {
+  for (const hostResult of parsed.hosts) {
+    const scanResultRef = db.collection('ScanResults').doc();
+    const sanitizedPorts = (hostResult.ports || []).map(p => ({
+      port: p.port,
+      protocol: p.protocol || 'tcp',
+      state: p.state,
+      state_reason: p.state_reason || '',
+      service: {
+        name: p.service?.name || 'unknown',
+        product: p.service?.product || '',
+        version: p.service?.version || '',
+        extrainfo: p.service?.extrainfo || '',
+        method: p.service?.method || ''
+      },
+      summary: p.summary || ''
+    }));
 
-
-
-// --------------------------------------------------
-// NEW: Store results functions (Quick vs Deep)
-// --------------------------------------------------
+    await safeFirestoreSet(scanResultRef, {
+      scan_id: scanId,
+      host: hostResult.host,
+      hostname: hostResult.hostname,
+      mac_address: hostResult.mac_address,
+      vendor: hostResult.vendor,
+      host_status: hostResult.status,
+      ports: sanitizedPorts,
+      open_ports_count: hostResult.open_ports_count,
+      device_type: hostResult.device_type,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      network_scan: preset === 'quick_scan',
+      parent_scan_id: scanId,
+      scan_duration: runResult.duration,
+      preset_used: preset
+    });
+  }
+}
 
 // Store quick scan results: keep it lean (fewer fields)
-// Store scan results for quick scans
 async function storeQuickScanResults(scanId, parsed, runResult, preset, userId = null, targetId = null) {
   for (const hostResult of parsed.hosts) {
     const scanResultRef = db.collection('ScanResults').doc();
@@ -1356,452 +1649,7 @@ async function storeQuickScanResults(scanId, parsed, runResult, preset, userId =
   }
 }
 
-
-
-
-
-
-
-// --------------------------------------------------
-// END store functions
-// --------------------------------------------------
-
-
-// --- Express API Setup ---
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-io.sockets.setMaxListeners(40);
-require('events').EventEmitter.defaultMaxListeners = 40;
-app.use(bodyParser.json());
-
-// List available scan presets
-// List available scan presets
-app.get('/presets', (req, res) => {
-  const presetsInfo = {
-    quick_scan: {
-      name: 'quick_scan',
-      description: 'Ultra-fast network discovery - finds IPs, MAC addresses, hostnames, and device types in under 1 minute',
-      timeout: '1 minute',
-      best_for: 'Quick network inventory and device discovery',
-      example_targets: ['192.168.1.0/24', '10.208.192.0/24', '10.0.0.1-100'],
-      finds: ['IP addresses', 'MAC addresses', 'Hostnames', 'Device types', 'Network topology']
-    },
-    deep_scan: {
-      name: 'deep_scan',
-      description: 'Comprehensive single target scan with service detection, OS detection, and security scripts',
-      timeout: '15 minutes',
-      best_for: 'Detailed analysis of individual systems',
-      example_targets: ['192.168.1.100', 'example.com', '10.208.195.132'],
-      finds: ['Open ports', 'Service versions', 'Operating system', 'Security vulnerabilities', 'Service banners']
-    }
-  };
-
-  res.json({ presets: presetsInfo });
-});
-
-app.post('/scan', async (req, res) => {
-  try {
-    const { target, preset, userId, targetId: providedTargetId, scanName } = req.body;
-
-    // Require userId and preset, but allow either target OR targetId
-    if (!userId) return res.status(400).json({ error: 'userId required' });
-    if (!PRESETS[preset]) return res.status(400).json({ error: 'unknown preset' });
-
-    // Resolve target: either direct target string or lookup by targetId
-    let scanTarget = target && typeof target === 'string' && target.trim().length > 0 ? target.trim() : null;
-    let targetId = providedTargetId || null;
-
-    if (!scanTarget && targetId) {
-      // fetch target doc
-      const tdoc = await db.collection('Targets').doc(targetId).get();
-      if (!tdoc.exists) {
-        return res.status(404).json({ error: 'Target ID not found' });
-      }
-      const tdata = tdoc.data();
-      if (!tdata || !tdata.host) {
-        return res.status(400).json({ error: 'Target document missing host field' });
-      }
-      scanTarget = tdata.host;
-    }
-
-    if (!scanTarget) return res.status(400).json({ error: 'target (IP/host) or targetId required' });
-
-    // Validate network target string (this will throw if invalid)
-    try {
-      scanTarget = validateNetworkTarget(scanTarget);
-    } catch (e) {
-      return res.status(400).json({ error: 'invalid target: ' + e.message });
-    }
-
-    if (!isAllowedTarget(scanTarget)) return res.status(403).json({ error: 'target not allowed' });
-
-    const isNetworkScan = preset === 'quick_scan' || /(\/\d{1,2}$|-\d{1,3}$|\[.*\]|,)/.test(scanTarget);
-
-    // Create scan record in 'Scan'
-    const scanId = uuidv4();
-    await safeFirestoreSet(db.collection('Scan').doc(scanId), {
-      status: 'ongoing',
-      submitted_at: admin.firestore.FieldValue.serverTimestamp(),
-      started_at: null,
-      finished_at: null,
-      scan_type: preset,
-      target: scanTarget,
-      user_id: userId,
-      scan_name: scanName || `${preset} - ${scanTarget}`,
-      is_network_scan: isNetworkScan,
-      preset_used: preset,
-      // store targetId if provided so we keep linkage at scan level too
-      target_id: targetId || null
-    });
-
-    // pre-scan reachability check
-    console.log(`[${scanId}] Pre-scan reachability check...`);
-    const sampleIP = extractSampleIP(scanTarget);
-    const canPing = await checkNetworkReachable(sampleIP);
-
-    if (!canPing) {
-      await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-        status: 'failed',
-        finished_at: admin.firestore.FieldValue.serverTimestamp(),
-        error: 'Network unreachable - pre-scan check failed',
-        error_details: { sample_ip: sampleIP }
-      });
-      return res.status(400).json({
-        error: 'Network unreachable',
-        message: `Cannot reach ${sampleIP}. The network segment may be firewalled or offline.`,
-        suggestion: 'Try a different subnet or verify network connectivity'
-      });
-    }
-    console.log(`[${scanId}] Network is reachable, proceeding with scan...`);
-
-    // Run scan asynchronously (rest unchanged)...
-    (async () => {
-      let runResult;
-      try {
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          started_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log(`[${scanId}] Starting ${preset} scan for: ${scanTarget}`);
-
-        if (preset === 'quick_scan') {
-          runResult = await runNmap(PRESETS.quick_scan.args, scanTarget, 'quick_scan', scanId);
-        } else if (preset === 'deep_scan') {
-          runResult = await runNmap(PRESETS.deep_scan.args, scanTarget, 'deep_scan', scanId);
-        }
-
-        const stdout = runResult.stdout || '';
-        console.log(`[${scanId}] Scan completed. stdout length: ${stdout.length}`);
-
-        const parsed = await parseNetworkScanXml(stdout, scanTarget, preset);
-
-        // Pass userId and targetId into the store call so ScanResults include references
-        if (preset === 'quick_scan') {
-          await storeQuickScanResults(scanId, parsed, runResult, preset, userId, targetId);
-        } else {
-          await storeDeepScanResults(scanId, parsed, runResult, preset, userId, targetId);
-        }
-
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          status: 'complete',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
-          summary: {
-            total_hosts: parsed.totalHosts,
-            active_hosts: parsed.activeHosts,
-            open_ports_total: parsed.openPortsTotal,
-            vulnerabilities_total: parsed.vulnerabilitiesTotal,
-            device_types: parsed.device_types,
-            scan_duration: runResult.duration
-          }
-        });
-
-      } catch (err) {
-        console.error(`[${scanId}] Scan failed: ${err.message}`);
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          status: 'failed',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
-          error: err.message,
-          error_details: {
-            stderr: runResult?.stderr || '',
-            code: runResult?.code || -1,
-            signal: runResult?.signal || ''
-          }
-        });
-      }
-    })();
-
-    return res.json({
-      scanId,
-      status: 'ongoing',
-      preset,
-      target: scanTarget,
-      targetId: targetId || null,
-      is_network_scan: isNetworkScan,
-      estimatedTimeout: PRESETS[preset].calculateTimeout(scanTarget) / 1000 + ' seconds',
-      message: `Scan started. Use GET /scan/${scanId} to check status.`
-    });
-
-  } catch (err) {
-    return res.status(500).json({ error: 'server error', details: err.message });
-  }
-});
-
-app.post('/scan/deep', async (req, res) => {
-  try {
-    const { targetId, targetIds, ipList, target: directTarget, userId, scanName } = req.body;
-
-    console.log('=== DEEP SCAN REQUEST ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-
-    // Validate input
-    if (!userId) {
-      return res.status(400).json({ error: 'userId required' });
-    }
-
-    // Accept either: ipList OR targetIds/targetId OR a direct single target (target)
-    const hasTargetIds = targetId || (targetIds && Array.isArray(targetIds) && targetIds.length > 0);
-    const hasIpList = ipList && typeof ipList === 'string' && ipList.trim().length > 0;
-    const hasDirectTarget = directTarget && typeof directTarget === 'string' && directTarget.trim().length > 0;
-
-    if (!hasTargetIds && !hasIpList && !hasDirectTarget) {
-      return res.status(400).json({
-        error: 'Either target, targetId, targetIds, or ipList required',
-        usage: {
-          single_target: '{"targetId": "target123", "userId": "user123", "scanName": "..."}',
-          multiple_targets: '{"targetIds": ["target1", "target2"], "userId": "user123", "scanName": "..."}',
-          direct_ips: '{"ipList": "192.168.1.1,192.168.1.100-150,10.0.0.0/24", "userId": "user123", "scanName": "..."}',
-          single_ip: '{"target": "192.168.1.123", "userId": "user123", "scanName": "..."}'
-        }
-      });
-    }
-
-    let targets = [];
-    let targetHosts = '';
-    let scanMode = '';
-    let resolvedTargetId = null; // will hold single targetId when scanning one known target
-
-    // Direct IP/host provided
-    if (hasDirectTarget) {
-      scanMode = 'single_target';
-      targetHosts = directTarget.trim();
-      targets = [{ host: targetHosts, hostname: '' }];
-      console.log(`[Deep Scan] Direct single target provided: ${targetHosts}`);
-    }
-    // IP list
-    else if (hasIpList) {
-      scanMode = 'ip_list';
-      targetHosts = ipList.trim();
-      const sampleIps = extractSampleIPsFromList(targetHosts);
-      targets = sampleIps.map(ip => ({ host: ip, hostname: '' }));
-      console.log(`[Deep Scan] Direct IP list scan: ${targetHosts}`);
-    }
-    // Single targetId
-    else if (targetId) {
-      scanMode = 'single_target';
-      resolvedTargetId = targetId;
-      const targetDoc = await db.collection('Targets').doc(targetId).get();
-      if (!targetDoc.exists) {
-        return res.status(404).json({ error: 'Target not found' });
-      }
-      const target = targetDoc.data();
-      targets = [target];
-      targetHosts = target.host;
-      console.log(`[Deep Scan] Single targetId scan: ${targetHosts} (id=${targetId})`);
-    }
-    // Multiple targets
-    else {
-      // targetIds must be an array here (we validated earlier)
-      scanMode = 'multiple_targets';
-      if (!targetIds || !Array.isArray(targetIds)) {
-        return res.status(400).json({ error: 'targetIds must be an array for multiple_targets' });
-      }
-      if (targetIds.length > 10) {
-        return res.status(400).json({
-          error: 'Too many targets selected',
-          message: 'Please select 10 or fewer targets for deep scanning'
-        });
-      }
-
-      const targetsSnap = await db.collection('Targets')
-        .where('target_id', 'in', targetIds)
-        .get();
-
-      if (targetsSnap.empty) {
-        return res.status(404).json({ error: 'No targets found' });
-      }
-
-      targets = targetsSnap.docs.map(doc => doc.data());
-      targetHosts = targets.map(t => t.host).join(',');
-      console.log(`[Deep Scan] Multiple targetIds scan for ${targets.length} targets`);
-    }
-
-    // Validate/normalize targetHosts (only for single host or composed host string)
-    try {
-      // Only attempt validation for non-ip_list (ip_list can be CIDR/ranges which validateNetworkTarget handles too)
-      targetHosts = validateNetworkTarget(targetHosts);
-    } catch (e) {
-      return res.status(400).json({ error: 'invalid target: ' + e.message });
-    }
-
-    // Create scan record
-    const scanId = uuidv4();
-    console.log(`[${scanId}] Creating scan record...`);
-
-    await safeFirestoreSet(db.collection('Scan').doc(scanId), {
-      status: 'ongoing',
-      submitted_at: admin.firestore.FieldValue.serverTimestamp(),
-      started_at: null,
-      finished_at: null,
-      scan_type: 'deep_scan',
-      target: targetHosts,
-      target_ids: scanMode === 'multiple_targets' ? targetIds : (scanMode === 'single_target' && resolvedTargetId ? [resolvedTargetId] : []),
-      ip_list_used: scanMode === 'ip_list',
-      user_id: userId,
-      scan_name: scanName || generateScanName(scanMode, targets, targetHosts),
-      is_network_scan: false,
-      preset_used: 'deep_scan',
-      scan_mode: scanMode
-    });
-
-    console.log(`[${scanId}] Scan record created, starting async scan...`);
-
-    // Run deep scan asynchronously with better debugging
-    (async () => {
-      let runResult;
-      try {
-        console.log(`[${scanId}] Updating scan to started...`);
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          started_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log(`[${scanId}] Starting deep scan (${scanMode}): ${targetHosts}`);
-        runResult = await runNmap(PRESETS.deep_scan.args, targetHosts, 'deep_scan', scanId);
-
-        const stdout = runResult.stdout || '';
-        console.log(`[${scanId}] Deep scan completed, stdout length: ${stdout.length}`);
-        console.log(`[${scanId}] Run result keys:`, Object.keys(runResult));
-
-        // Parse and store results with debugging
-        console.log(`[${scanId}] === DEBUG XML CONTENT ===`);
-        console.log(`[${scanId}] Full XML length: ${stdout.length}`);
-        console.log(`[${scanId}] XML contains <host>: ${stdout.includes('<host>')}`);
-        console.log(`[${scanId}] XML contains </host>: ${stdout.includes('</host>')}`);
-        console.log(`[${scanId}] Host start position: ${stdout.indexOf('<host>')}`);
-        console.log(`[${scanId}] Host end position: ${stdout.indexOf('</host>')}`);
-
-        // Show a sample of the host section
-        const hostStart = stdout.indexOf('<host');
-        if (hostStart !== -1) {
-          const hostEnd = stdout.indexOf('</host>', hostStart);
-          if (hostEnd !== -1) {
-            console.log(`[${scanId}] Host section sample (first 300 chars):`);
-            console.log(stdout.substring(hostStart, Math.min(hostStart + 300, hostEnd + 7)));
-          }
-        }
-        console.log(`[${scanId}] Starting XML parsing...`);
-        const parsed = await parseDeepScanXml(stdout, targetHosts);
-        console.log(`[${scanId}] XML parsing completed, found ${parsed.hosts ? parsed.hosts.length : 0} hosts`);
-
-        // Debug the parsed data
-        if (parsed.hosts && parsed.hosts.length > 0) {
-          console.log(`[${scanId}] First host sample:`, {
-            host: parsed.hosts[0].host,
-            ports_count: parsed.hosts[0].ports ? parsed.hosts[0].ports.length : 0,
-            device_type: parsed.hosts[0].device_type
-          });
-        } else {
-          console.log(`[${scanId}] WARNING: No hosts found in parsed data`);
-        }
-
-        // Use the new store function with debugging
-        const usedTargetIdForResults = scanMode === 'single_target' ? (resolvedTargetId || null) : (scanMode === 'multiple_targets' ? null : null);
-
-        console.log(`[${scanId}] Calling storeDeepScanResults...`);
-        console.log(`[${scanId}] Parameters:`, {
-          scanId,
-          hostsCount: parsed.hosts ? parsed.hosts.length : 0,
-          userId,
-          targetId: usedTargetIdForResults,
-          preset: 'deep_scan'
-        });
-
-        // Add try-catch around the store function call
-        try {
-          await storeDeepScanResults(scanId, parsed, runResult, 'deep_scan', userId, usedTargetIdForResults);
-          console.log(`[${scanId}] storeDeepScanResults completed successfully`);
-        } catch (storeError) {
-          console.error(`[${scanId}] storeDeepScanResults failed:`, storeError.message);
-          console.error(`[${scanId}] Store error stack:`, storeError.stack);
-          throw storeError; // Re-throw to be caught by outer catch
-        }
-
-        // Update target scan counts
-        if (scanMode !== 'ip_list' && scanMode !== 'single_target' || (scanMode === 'single_target' && resolvedTargetId)) {
-          const targetIdsToUpdate = scanMode === 'single_target' && resolvedTargetId ? [resolvedTargetId] : (scanMode === 'multiple_targets' ? targetIds : []);
-          console.log(`[${scanId}] Updating ${targetIdsToUpdate.length} target scan counts`);
-          for (const tId of targetIdsToUpdate) {
-            const targetRef = db.collection('Targets').doc(tId);
-            await safeFirestoreUpdate(targetRef, {
-              scan_count: admin.firestore.FieldValue.increment(1),
-              last_seen: admin.firestore.FieldValue.serverTimestamp()
-            });
-          }
-        }
-
-        // Update main scan record
-        console.log(`[${scanId}] Updating scan record to complete`);
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          status: 'complete',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
-          summary: {
-            total_hosts: parsed.totalHosts,
-            active_hosts: parsed.activeHosts,
-            open_ports_total: parsed.openPortsTotal,
-            vulnerabilities_total: parsed.vulnerabilitiesTotal,
-            device_types: parsed.device_types,
-            scan_duration: runResult.duration,
-            scan_mode: scanMode
-          }
-        });
-
-        console.log(`[${scanId}] Deep scan process completed successfully`);
-
-      } catch (err) {
-        console.error(`[${scanId}] Deep scan failed:`, err.message);
-        console.error(`[${scanId}] Error stack:`, err.stack);
-        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          status: 'failed',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
-          error: err.message,
-          error_details: {
-            step: 'async_processing',
-            stack: err.stack
-          }
-        });
-      }
-    })();
-
-    res.json({
-      scanId,
-      status: 'ongoing',
-      scan_mode: scanMode,
-      targets: targets.map(t => ({
-        host: t.host,
-        hostname: t.hostname,
-        target_id: t.target_id
-      })),
-      target_count: targets.length,
-      scan_target: targetHosts,
-      message: generateScanMessage(scanMode, targets, targetHosts)
-    });
-
-  } catch (err) {
-    console.error('Error in deep scan endpoint:', err);
-    res.status(500).json({ error: 'server error', details: err.message });
-  }
-});
-
+// Store deep scan results with AI risk assessment
 async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, targetId) {
   console.log(`[DEBUG storeDeepScanResults] Starting storage for scan: ${scanId}`);
   console.log(`[DEBUG] userId: ${userId}, targetId: ${targetId}`);
@@ -2019,6 +1867,7 @@ async function storeDeepScanResults(scanId, parsed, runResult, preset, userId, t
     }
   }
 }
+
 // Helper function to extract sample IPs from list for display
 function extractSampleIPsFromList(ipList) {
   try {
@@ -2075,11 +1924,458 @@ function generateScanMessage(scanMode, targets, targetHosts) {
   }
 }
 
-// Get detailed risk analysis for a scan - VERSÃO CORRIGIDA
+// --- Express API Setup ---
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+io.sockets.setMaxListeners(40);
+require('events').EventEmitter.defaultMaxListeners = 40;
+app.use(cors());
+app.use(express.json());
+
+// List available scan presets
+app.get('/presets', (req, res) => {
+  const presetsInfo = {
+    quick_scan: {
+      name: 'quick_scan',
+      description: 'Ultra-fast network discovery - finds IPs, MAC addresses, hostnames, and device types in under 1 minute',
+      timeout: '1 minute',
+      best_for: 'Quick network inventory and device discovery',
+      example_targets: ['192.168.1.0/24', '10.208.192.0/24', '10.0.0.1-100'],
+      finds: ['IP addresses', 'MAC addresses', 'Hostnames', 'Device types', 'Network topology']
+    },
+    deep_scan: {
+      name: 'deep_scan',
+      description: 'Comprehensive single target scan with service detection, OS detection, and security scripts',
+      timeout: '15 minutes',
+      best_for: 'Detailed analysis of individual systems',
+      example_targets: ['192.168.1.100', 'example.com', '10.208.195.132'],
+      finds: ['Open ports', 'Service versions', 'Operating system', 'Security vulnerabilities', 'Service banners']
+    }
+  };
+
+  res.json({ presets: presetsInfo });
+});
+
+app.post('/scan', async (req, res) => {
+  try {
+    const { target, preset, userId, targetId: providedTargetId, scanName } = req.body;
+
+    // Require userId and preset, but allow either target OR targetId
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    if (!PRESETS[preset]) return res.status(400).json({ error: 'unknown preset' });
+
+    // Resolve target: either direct target string or lookup by targetId
+    let scanTarget = target && typeof target === 'string' && target.trim().length > 0 ? target.trim() : null;
+    let targetId = providedTargetId || null;
+
+    if (!scanTarget && targetId) {
+      // fetch target doc
+      const tdoc = await db.collection('Targets').doc(targetId).get();
+      if (!tdoc.exists) {
+        return res.status(404).json({ error: 'Target ID not found' });
+      }
+      const tdata = tdoc.data();
+      if (!tdata || !tdata.host) {
+        return res.status(400).json({ error: 'Target document missing host field' });
+      }
+      scanTarget = tdata.host;
+    }
+
+    if (!scanTarget) return res.status(400).json({ error: 'target (IP/host) or targetId required' });
+
+    // Validate network target string (this will throw if invalid)
+    try {
+      scanTarget = validateNetworkTarget(scanTarget);
+    } catch (e) {
+      return res.status(400).json({ error: 'invalid target: ' + e.message });
+    }
+
+    if (!isAllowedTarget(scanTarget)) return res.status(403).json({ error: 'target not allowed' });
+
+    const isNetworkScan = preset === 'quick_scan' || /(\/\d{1,2}$|-\d{1,3}$|\[.*\]|,)/.test(scanTarget);
+
+    // Create scan record in 'Scan'
+    const scanId = uuidv4();
+    await safeFirestoreSet(db.collection('Scan').doc(scanId), {
+      status: 'ongoing',
+      submitted_at: admin.firestore.FieldValue.serverTimestamp(),
+      started_at: null,
+      finished_at: null,
+      scan_type: preset,
+      target: scanTarget,
+      user_id: userId,
+      scan_name: scanName || `${preset} - ${scanTarget}`,
+      is_network_scan: isNetworkScan,
+      preset_used: preset,
+      // store targetId if provided so we keep linkage at scan level too
+      target_id: targetId || null
+    });
+
+    // Check if it's a network scan and do pre-scan reachability check
+    if (isNetworkScan) {
+      console.log(`[${scanId}] Pre-scan reachability check...`);
+      const sampleIP = extractSampleIP(scanTarget);
+      const canPing = await checkNetworkReachable(sampleIP);
+
+      if (!canPing) {
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          status: 'failed',
+          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          error: 'Network unreachable - pre-scan check failed',
+          error_details: { sample_ip: sampleIP }
+        });
+        return res.status(400).json({
+          error: 'Network unreachable',
+          message: `Cannot reach ${sampleIP}. The network segment may be firewalled or offline.`,
+          suggestion: 'Try a different subnet or verify network connectivity'
+        });
+      }
+      console.log(`[${scanId}] Network is reachable, proceeding with scan...`);
+    }
+
+    // Run scan asynchronously
+    (async () => {
+      let runResult;
+      try {
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          started_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[${scanId}] Starting ${preset} scan for: ${scanTarget}`);
+
+        // Use appropriate scan function based on preset
+        if (preset === 'quick_scan') {
+          runResult = await runNmap(PRESETS.quick_scan.args, scanTarget, 'quick_scan', scanId);
+        } else if (preset === 'deep_scan') {
+          runResult = await runNmap(PRESETS.deep_scan.args, scanTarget, 'deep_scan', scanId);
+        }
+
+        const stdout = runResult.stdout;
+        console.log(`[${scanId}] Scan completed. stdout length: ${stdout.length}`);
+
+        // Parse scan result - use appropriate parser
+        let parsed;
+        if (preset === 'deep_scan') {
+          parsed = await parseDeepScanXml(stdout, scanTarget);
+        } else {
+          parsed = await parseNetworkScanXml(stdout, scanTarget, preset);
+        }
+
+        // Store results in Firestore - use appropriate storage function
+        if (preset === 'quick_scan') {
+          await storeQuickScanResults(scanId, parsed, runResult, preset, userId, targetId);
+        } else if (preset === 'deep_scan') {
+          await storeDeepScanResults(scanId, parsed, runResult, preset, userId, targetId);
+        } else {
+          await storeScanResults(scanId, parsed, runResult, preset);
+        }
+
+        // Update main scan record
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          status: 'complete',
+          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          summary: {
+            total_hosts: parsed.totalHosts,
+            active_hosts: parsed.activeHosts,
+            open_ports_total: parsed.openPortsTotal,
+            vulnerabilities_total: parsed.vulnerabilitiesTotal,
+            device_types: parsed.device_types,
+            scan_duration: runResult.duration
+          }
+        });
+
+      } catch (err) {
+        console.error(`[${scanId}] Scan failed: ${err.message}`);
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          status: 'failed',
+          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          error: err.message,
+          error_details: {
+            stderr: runResult?.stderr || '',
+            code: runResult?.code || -1,
+            signal: runResult?.signal || ''
+          }
+        });
+      }
+    })();
+
+    return res.json({
+      scanId,
+      status: 'ongoing',
+      preset,
+      target: scanTarget,
+      targetId: targetId || null,
+      is_network_scan: isNetworkScan,
+      estimatedTimeout: PRESETS[preset].calculateTimeout(scanTarget) / 1000 + ' seconds',
+      message: `Scan started. Use GET /scan/${scanId} to check status.`
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: 'server error', details: err.message });
+  }
+});
+
+// NEW: Unified deep scan endpoint from file 2
+app.post('/scan/deep', async (req, res) => {
+  try {
+    const { targetId, targetIds, ipList, target: directTarget, userId, scanName } = req.body;
+
+    console.log('=== DEEP SCAN REQUEST ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+    // Validate input
+    if (!userId) {
+      return res.status(400).json({ error: 'userId required' });
+    }
+
+    // Accept either: ipList OR targetIds/targetId OR a direct single target (target)
+    const hasTargetIds = targetId || (targetIds && Array.isArray(targetIds) && targetIds.length > 0);
+    const hasIpList = ipList && typeof ipList === 'string' && ipList.trim().length > 0;
+    const hasDirectTarget = directTarget && typeof directTarget === 'string' && directTarget.trim().length > 0;
+
+    if (!hasTargetIds && !hasIpList && !hasDirectTarget) {
+      return res.status(400).json({
+        error: 'Either target, targetId, targetIds, or ipList required',
+        usage: {
+          single_target: '{"targetId": "target123", "userId": "user123", "scanName": "..."}',
+          multiple_targets: '{"targetIds": ["target1", "target2"], "userId": "user123", "scanName": "..."}',
+          direct_ips: '{"ipList": "192.168.1.1,192.168.1.100-150,10.0.0.0/24", "userId": "user123", "scanName": "..."}',
+          single_ip: '{"target": "192.168.1.123", "userId": "user123", "scanName": "..."}'
+        }
+      });
+    }
+
+    let targets = [];
+    let targetHosts = '';
+    let scanMode = '';
+    let resolvedTargetId = null; // will hold single targetId when scanning one known target
+
+    // Direct IP/host provided
+    if (hasDirectTarget) {
+      scanMode = 'single_target';
+      targetHosts = directTarget.trim();
+      targets = [{ host: targetHosts, hostname: '' }];
+      console.log(`[Deep Scan] Direct single target provided: ${targetHosts}`);
+    }
+    // IP list
+    else if (hasIpList) {
+      scanMode = 'ip_list';
+      targetHosts = ipList.trim();
+      const sampleIps = extractSampleIPsFromList(targetHosts);
+      targets = sampleIps.map(ip => ({ host: ip, hostname: '' }));
+      console.log(`[Deep Scan] Direct IP list scan: ${targetHosts}`);
+    }
+    // Single targetId
+    else if (targetId) {
+      scanMode = 'single_target';
+      resolvedTargetId = targetId;
+      const targetDoc = await db.collection('Targets').doc(targetId).get();
+      if (!targetDoc.exists) {
+        return res.status(404).json({ error: 'Target not found' });
+      }
+      const target = targetDoc.data();
+      targets = [target];
+      targetHosts = target.host;
+      console.log(`[Deep Scan] Single targetId scan: ${targetHosts} (id=${targetId})`);
+    }
+    // Multiple targets
+    else {
+      // targetIds must be an array here (we validated earlier)
+      scanMode = 'multiple_targets';
+      if (!targetIds || !Array.isArray(targetIds)) {
+        return res.status(400).json({ error: 'targetIds must be an array for multiple_targets' });
+      }
+      if (targetIds.length > 10) {
+        return res.status(400).json({
+          error: 'Too many targets selected',
+          message: 'Please select 10 or fewer targets for deep scanning'
+        });
+      }
+
+      const targetsSnap = await db.collection('Targets')
+        .where('target_id', 'in', targetIds)
+        .get();
+
+      if (targetsSnap.empty) {
+        return res.status(404).json({ error: 'No targets found' });
+      }
+
+      targets = targetsSnap.docs.map(doc => doc.data());
+      targetHosts = targets.map(t => t.host).join(',');
+      console.log(`[Deep Scan] Multiple targetIds scan for ${targets.length} targets`);
+    }
+
+    // Validate/normalize targetHosts (only for non-ip_list (ip_list can be CIDR/ranges which validateNetworkTarget handles too)
+    try {
+      targetHosts = validateNetworkTarget(targetHosts);
+    } catch (e) {
+      return res.status(400).json({ error: 'invalid target: ' + e.message });
+    }
+
+    // Create scan record
+    const scanId = uuidv4();
+    console.log(`[${scanId}] Creating scan record...`);
+
+    await safeFirestoreSet(db.collection('Scan').doc(scanId), {
+      status: 'ongoing',
+      submitted_at: admin.firestore.FieldValue.serverTimestamp(),
+      started_at: null,
+      finished_at: null,
+      scan_type: 'deep_scan',
+      target: targetHosts,
+      target_ids: scanMode === 'multiple_targets' ? targetIds : (scanMode === 'single_target' && resolvedTargetId ? [resolvedTargetId] : []),
+      ip_list_used: scanMode === 'ip_list',
+      user_id: userId,
+      scan_name: scanName || generateScanName(scanMode, targets, targetHosts),
+      is_network_scan: false,
+      preset_used: 'deep_scan',
+      scan_mode: scanMode
+    });
+
+    console.log(`[${scanId}] Scan record created, starting async scan...`);
+
+    // Run deep scan asynchronously with better debugging
+    (async () => {
+      let runResult;
+      try {
+        console.log(`[${scanId}] Updating scan to started...`);
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          started_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[${scanId}] Starting deep scan (${scanMode}): ${targetHosts}`);
+        runResult = await runNmap(PRESETS.deep_scan.args, targetHosts, 'deep_scan', scanId);
+
+        const stdout = runResult.stdout || '';
+        console.log(`[${scanId}] Deep scan completed, stdout length: ${stdout.length}`);
+        console.log(`[${scanId}] Run result keys:`, Object.keys(runResult));
+
+        // Parse and store results with debugging
+        console.log(`[${scanId}] === DEBUG XML CONTENT ===`);
+        console.log(`[${scanId}] Full XML length: ${stdout.length}`);
+        console.log(`[${scanId}] XML contains <host>: ${stdout.includes('<host>')}`);
+        console.log(`[${scanId}] XML contains </host>: ${stdout.includes('</host>')}`);
+        console.log(`[${scanId}] Host start position: ${stdout.indexOf('<host>')}`);
+        console.log(`[${scanId}] Host end position: ${stdout.indexOf('</host>')}`);
+
+        // Show a sample of the host section
+        const hostStart = stdout.indexOf('<host');
+        if (hostStart !== -1) {
+          const hostEnd = stdout.indexOf('</host>', hostStart);
+          if (hostEnd !== -1) {
+            console.log(`[${scanId}] Host section sample (first 300 chars):`);
+            console.log(stdout.substring(hostStart, Math.min(hostStart + 300, hostEnd + 7)));
+          }
+        }
+        console.log(`[${scanId}] Starting XML parsing...`);
+        const parsed = await parseDeepScanXml(stdout, targetHosts);
+        console.log(`[${scanId}] XML parsing completed, found ${parsed.hosts ? parsed.hosts.length : 0} hosts`);
+
+        // Debug the parsed data
+        if (parsed.hosts && parsed.hosts.length > 0) {
+          console.log(`[${scanId}] First host sample:`, {
+            host: parsed.hosts[0].host,
+            ports_count: parsed.hosts[0].ports ? parsed.hosts[0].ports.length : 0,
+            device_type: parsed.hosts[0].device_type
+          });
+        } else {
+          console.log(`[${scanId}] WARNING: No hosts found in parsed data`);
+        }
+
+        // Use the new store function with debugging
+        const usedTargetIdForResults = scanMode === 'single_target' ? (resolvedTargetId || null) : (scanMode === 'multiple_targets' ? null : null);
+
+        console.log(`[${scanId}] Calling storeDeepScanResults...`);
+        console.log(`[${scanId}] Parameters:`, {
+          scanId,
+          hostsCount: parsed.hosts ? parsed.hosts.length : 0,
+          userId,
+          targetId: usedTargetIdForResults,
+          preset: 'deep_scan'
+        });
+
+        // Add try-catch around the store function call
+        try {
+          await storeDeepScanResults(scanId, parsed, runResult, 'deep_scan', userId, usedTargetIdForResults);
+          console.log(`[${scanId}] storeDeepScanResults completed successfully`);
+        } catch (storeError) {
+          console.error(`[${scanId}] storeDeepScanResults failed:`, storeError.message);
+          console.error(`[${scanId}] Store error stack:`, storeError.stack);
+          throw storeError; // Re-throw to be caught by outer catch
+        }
+
+        // Update target scan counts
+        if (scanMode !== 'ip_list' && scanMode !== 'single_target' || (scanMode === 'single_target' && resolvedTargetId)) {
+          const targetIdsToUpdate = scanMode === 'single_target' && resolvedTargetId ? [resolvedTargetId] : (scanMode === 'multiple_targets' ? targetIds : []);
+          console.log(`[${scanId}] Updating ${targetIdsToUpdate.length} target scan counts`);
+          for (const tId of targetIdsToUpdate) {
+            const targetRef = db.collection('Targets').doc(tId);
+            await safeFirestoreUpdate(targetRef, {
+              scan_count: admin.firestore.FieldValue.increment(1),
+              last_seen: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
+        }
+
+        // Update main scan record
+        console.log(`[${scanId}] Updating scan record to complete`);
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          status: 'complete',
+          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          summary: {
+            total_hosts: parsed.totalHosts,
+            active_hosts: parsed.activeHosts,
+            open_ports_total: parsed.openPortsTotal,
+            vulnerabilities_total: parsed.vulnerabilitiesTotal,
+            device_types: parsed.device_types,
+            scan_duration: runResult.duration,
+            scan_mode: scanMode
+          }
+        });
+
+        console.log(`[${scanId}] Deep scan process completed successfully`);
+
+      } catch (err) {
+        console.error(`[${scanId}] Deep scan failed:`, err.message);
+        console.error(`[${scanId}] Error stack:`, err.stack);
+        await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
+          status: 'failed',
+          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          error: err.message,
+          error_details: {
+            step: 'async_processing',
+            stack: err.stack
+          }
+        });
+      }
+    })();
+
+    res.json({
+      scanId,
+      status: 'ongoing',
+      scan_mode: scanMode,
+      targets: targets.map(t => ({
+        host: t.host,
+        hostname: t.hostname,
+        target_id: t.target_id
+      })),
+      target_count: targets.length,
+      scan_target: targetHosts,
+      message: generateScanMessage(scanMode, targets, targetHosts)
+    });
+
+  } catch (err) {
+    console.error('Error in deep scan endpoint:', err);
+    res.status(500).json({ error: 'server error', details: err.message });
+  }
+});
+
+// NEW: Risk analysis endpoint from file 2
 app.get('/scan/:scanId/risk-analysis', async (req, res) => {
   try {
     const scanId = req.params.scanId;
-    
+
     // Get all ScanResults for this scan with risk assessment
     const resultsSnap = await db.collection('ScanResults')
       .where('parent_scan_id', '==', scanId)
@@ -2096,11 +2392,11 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
 
     // CALCULAR risk_summary A PARTIR DOS HOSTS INDIVIDUAIS
     const hostsWithRisk = ScanResults.filter(r => r.risk_assessment);
-    
+
     // Calcular estatísticas
     const totalRiskScore = hostsWithRisk.reduce((sum, host) => sum + (host.risk_assessment.riskScore || 0), 0);
     const averageRiskScore = hostsWithRisk.length > 0 ? totalRiskScore / hostsWithRisk.length : 0;
-    
+
     // Calcular risk distribution
     const riskDistribution = {
       CRITICAL: 0,
@@ -2109,7 +2405,7 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
       LOW: 0,
       INFO: 0
     };
-    
+
     hostsWithRisk.forEach(host => {
       const riskLevel = host.risk_assessment.finalRisk;
       if (riskDistribution.hasOwnProperty(riskLevel)) {
@@ -2120,7 +2416,7 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
     // Calcular overall risk
     const calculateOverallRisk = () => {
       if (hostsWithRisk.length === 0) return 'UNKNOWN';
-      
+
       const riskWeights = {
         CRITICAL: 5,
         HIGH: 4,
@@ -2128,13 +2424,13 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
         LOW: 2,
         INFO: 1
       };
-      
+
       const weightedSum = hostsWithRisk.reduce((sum, host) => {
         return sum + (riskWeights[host.risk_assessment.finalRisk] || 1);
       }, 0);
-      
+
       const averageWeight = weightedSum / hostsWithRisk.length;
-      
+
       if (averageWeight >= 4.5) return 'CRITICAL';
       if (averageWeight >= 3.5) return 'HIGH';
       if (averageWeight >= 2.5) return 'MEDIUM';
@@ -2169,7 +2465,7 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
         'Uncommon or unknown service': 'Investigate and secure unknown service',
         'Service blocking connections': 'Fix service configuration'
       };
-      
+
       return actions[finding.description.split(' - ')[0]] || 'Review configuration and apply security best practices';
     }
 
@@ -2195,7 +2491,7 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
         risk_assessment: h.risk_assessment,
         open_ports: h.open_ports_count
       })),
-      detailed_findings: hostsWithRisk.flatMap(h => 
+      detailed_findings: hostsWithRisk.flatMap(h =>
         (h.risk_assessment.findings || []).map(f => ({
           host: h.host,
           ...f
@@ -2209,6 +2505,7 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
   }
 });
 
+// NEW: Add selected targets endpoint from file 2
 app.post('/targets/add-selected', async (req, res) => {
   try {
     const { scanResultIds, userId, groupName = "Custom Group" } = req.body;
@@ -2305,7 +2602,8 @@ app.post('/targets/add-selected', async (req, res) => {
     res.status(500).json({ error: 'Failed to add selected targets', details: err.message });
   }
 });
-//FUNCIONA DEVOLVE TODOS OS TARGETS DE UM CERTO GRUPO PARA O USER QUE O OWNS
+
+// NEW: Get targets by group from file 2
 app.get('/targets/by-group/:userId/:groupName', async (req, res) => {
   try {
     const { userId, groupName } = req.params;
@@ -2333,7 +2631,7 @@ app.get('/targets/by-group/:userId/:groupName', async (req, res) => {
   }
 });
 
-// FUNCIONA Get all unique group names for a user
+// NEW: Get all unique group names for a user from file 2
 app.get('/targets/groups/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -2356,6 +2654,219 @@ app.get('/targets/groups/:userId', async (req, res) => {
   } catch (err) {
     console.error('Error getting user groups:', err);
     res.status(500).json({ error: 'Failed to get groups', details: err.message });
+  }
+});
+
+// NEW: Get all targets for a user from file 2
+app.get('/targets/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const targetsSnap = await db.collection('Targets')
+      .where('added_by', '==', userId)
+      .orderBy('added_at', 'desc')
+      .get();
+
+    const targets = targetsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    res.json({
+      user_id: userId,
+      targets: targets,
+      count: targets.length
+    });
+
+  } catch (err) {
+    console.error('Error getting user targets:', err);
+    res.status(500).json({ error: 'Failed to get targets', details: err.message });
+  }
+});
+
+// Keep existing endpoints from file 1
+app.post('/targets/add-from-scan', async (req, res) => {
+  try {
+    const { scanId, userId, listName = "Discovered Targets" } = req.body;
+
+    if (!scanId || !userId) {
+      return res.status(400).json({ error: 'scanId and userId required' });
+    }
+
+    // Get scan details first - using Reference
+    const scanRef = db.collection('Scan').doc(scanId);
+    const scanDoc = await scanRef.get();
+    if (!scanDoc.exists) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
+    const scanData = scanDoc.data();
+
+    // Get scan results
+    const resultsSnap = await db.collection('ScanResults')
+      .where('parent_scan_id', '==', scanId)
+      .get();
+
+    if (resultsSnap.empty) {
+      return res.status(404).json({ error: 'No scan results found' });
+    }
+
+    const targetRefs = []; // Store Firestore References
+    const targetDetails = []; // Store basic info for quick display
+
+    const targetListRef = db.collection('TargetLists').doc();
+
+    // Create target list with proper References
+    await safeFirestoreSet(targetListRef, {
+      list_id: targetListRef.id,
+      name: listName,
+      description: `Targets discovered from scan ${scanId}`,
+      targets: targetRefs, // Firestore References array
+      target_details: targetDetails, // Basic info for quick access
+      user_id: userId,
+      source_scan: scanRef, // ← Firestore Reference to Scan
+      source_scan_id: scanId, // Also keep string ID for convenience
+      source_scan_name: scanData.scan_name,
+      source_scan_target: scanData.target,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      target_count: 0,
+      scan_count: 0,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Add each host as a target with proper References
+    for (const doc of resultsSnap.docs) {
+      const hostData = doc.data();
+      const targetRef = db.collection('Targets').doc();
+
+      const target = {
+        target_id: targetRef.id,
+        host: hostData.host,
+        hostname: hostData.hostname || '',
+        mac_address: hostData.mac_address || '',
+        vendor: hostData.vendor || '',
+        device_type: hostData.device_type || 'Unknown',
+        device_category: hostData.device_category || 'unknown',
+        classification_confidence: hostData.classification_confidence || 'low',
+        first_seen: admin.firestore.FieldValue.serverTimestamp(),
+        last_seen: admin.firestore.FieldValue.serverTimestamp(),
+        scan_count: 0,
+        user_id: userId,
+        discovered_in_scan: scanRef, // ← Firestore Reference to Scan
+        discovered_in_scan_id: scanId, // Also keep string ID
+        tags: ['discovered'],
+        notes: `Discovered during ${scanData.scan_name} on ${new Date().toLocaleDateString()}`,
+        classification_data: {
+          basis: hostData.classification_basis || 'unknown',
+          confidence: hostData.classification_confidence || 'low',
+          device_type: hostData.device_type || 'Unknown',
+          device_category: hostData.device_category || 'unknown'
+        },
+        // Reference to the parent target list
+        target_lists: [targetListRef]
+      };
+
+      await safeFirestoreSet(targetRef, target);
+
+      // Add Firestore Reference to the array
+      targetRefs.push(targetRef);
+
+      // Also store basic info for quick display
+      targetDetails.push({
+        target_id: targetRef.id,
+        host: target.host,
+        hostname: target.hostname,
+        device_type: target.device_type,
+        device_category: target.device_category,
+        confidence: target.classification_confidence,
+        added_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    // Update target list with References
+    await safeFirestoreUpdate(targetListRef, {
+      targets: targetRefs,
+      target_details: targetDetails,
+      target_count: targetRefs.length,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({
+      success: true,
+      targetsAdded: targetRefs.length,
+      listId: targetListRef.id,
+      scanReference: {
+        scan_id: scanId,
+        scan_name: scanData.scan_name,
+        original_target: scanData.target
+      },
+      message: `Added ${targetRefs.length} targets to "${listName}" from scan ${scanId}`
+    });
+
+  } catch (err) {
+    console.error('Error adding targets from scan:', err);
+    res.status(500).json({ error: 'Failed to add targets', details: err.message });
+  }
+});
+
+// Keep existing endpoints
+app.get('/targets/lists/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const listsSnap = await db.collection('TargetLists')
+      .where('user_id', '==', userId)
+      .orderBy('created_at', 'desc')
+      .get();
+
+    const lists = await Promise.all(
+      listsSnap.docs.map(async (doc) => {
+        const listData = doc.data();
+
+        // Resolve Firestore References to get full target data
+        const resolvedTargets = await Promise.all(
+          (listData.targets || []).map(async (targetRef) => {
+            const targetDoc = await targetRef.get();
+            if (targetDoc.exists) {
+              return {
+                id: targetDoc.id,
+                ...targetDoc.data(),
+                // Include the reference itself
+                _ref: targetRef
+              };
+            }
+            return null;
+          })
+        );
+
+        // Resolve scan reference if needed
+        let sourceScanData = null;
+        if (listData.source_scan) {
+          const scanDoc = await listData.source_scan.get();
+          if (scanDoc.exists) {
+            sourceScanData = {
+              id: scanDoc.id,
+              ...scanDoc.data()
+            };
+          }
+        }
+
+        return {
+          id: doc.id,
+          ...listData,
+          targets: resolvedTargets.filter(t => t !== null), // Full target objects
+          target_details: listData.target_details || [], // Quick info fallback
+          source_scan_data: sourceScanData, // Resolved scan data
+          // Keep the references for frontend use
+          _target_refs: listData.targets || [],
+          _scan_ref: listData.source_scan
+        };
+      })
+    );
+
+    res.json({ lists });
+
+  } catch (err) {
+    console.error('Error getting target lists:', err);
+    res.status(500).json({ error: 'Failed to get target lists', details: err.message });
   }
 });
 
@@ -2393,61 +2904,51 @@ app.get('/scan/:scanId', async (req, res) => {
   }
 });
 
-//GET ALL TARGETS FOR A USER
-app.get('/targets/user/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const targetsSnap = await db.collection('Targets')
-      .where('added_by', '==', userId)
-      .orderBy('added_at', 'desc')
-      .get();
-
-    const targets = targetsSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    res.json({
-      user_id: userId,
-      targets: targets,
-      count: targets.length
-    });
-
-  } catch (err) {
-    console.error('Error getting user targets:', err);
-    res.status(500).json({ error: 'Failed to get targets', details: err.message });
-  }
-});
-
-// Get all scans for a user
+// GET all scans for a user - VERSÃO CORRIGIDA
 app.get('/scans/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
+    console.log(`[API] Fetching scans for user: ${userId}`);
+
     const scansSnap = await db.collection('Scan')
       .where('user_id', '==', userId)
       .orderBy('submitted_at', 'desc')
       .limit(50)
       .get();
 
-    const scans = scansSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    console.log(`[API] Found ${scansSnap.size} scans for user ${userId}`);
 
+    const scans = scansSnap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Garantir que os timestamps são convertidos corretamente
+        submitted_at: data.submitted_at ? null : null,
+        started_at: data.started_at ? null : null,
+        finished_at: data.finished_at ? null : null
+      };
+    });
+
+    console.log(`[API] Successfully processed ${scans.length} scans`);
     res.json({ scans });
+
   } catch (err) {
-    res.status(500).json({ error: 'server error', details: err.message });
+    console.error('❌ Error in /scans/:userId:', err);
+    res.status(500).json({
+      error: 'Failed to get scans',
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
-// Health check endpoint
 // Health check endpoint
 app.get('/health', (req, res) => res.json({
   ok: true,
   now: new Date().toISOString(),
   presets: Object.keys(PRESETS),
-  features: ['quick_discovery', 'deep_analysis', 'target_management']
+  features: ['quick_discovery', 'deep_analysis', 'target_management', 'ai_risk_assessment']
 }));
 
-app.listen(PORT, () => console.log(`Enhanced Nmap-Firebase API listening on ${PORT}`));
+server.listen(PORT, () => console.log(`Enhanced Nmap-Firebase API with AI Risk Assessment listening on ${PORT}`));

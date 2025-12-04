@@ -1,0 +1,63 @@
+services:
+  # --- 1. Backend API (O teu servidor Node.js/Nmap) ---
+  api:
+    build:
+      context: ./API
+      dockerfile: Dockerfile
+    # Se tiveres o ficheiro .env com o JSON, descomenta isto:
+    # env_file:
+    #   - .env
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+    networks:
+      - vulnerai-net
+    environment:
+      - PORT=3000
+    volumes:
+      - ./API/keys:/app/keys
+
+  # --- 2. Website Principal (Pasta VsCode) ---
+  website:
+    image: nginx:alpine
+    volumes:
+      # Mapeia a pasta "VsCode" para a raiz do servidor web
+      - ./VsCode:/usr/share/nginx/html:ro
+    networks:
+      - vulnerai-net
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  # --- 3. Recursos/Assets (Pasta Resources) ---
+  assets:
+    image: nginx:alpine
+    volumes:
+      # Mapeia a pasta "Resources" para a raiz deste servidor
+      - ./Resources:/usr/share/nginx/html:ro
+    networks:
+      - vulnerai-net
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  # --- 4. Load Balancer (O Porteiro) ---
+  loadbalancer:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - website
+      - assets
+    networks:
+      - vulnerai-net
+
+networks:
+  vulnerai-net:
+    driver: bridge
