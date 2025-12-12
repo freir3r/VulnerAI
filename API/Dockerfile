@@ -20,7 +20,7 @@ COPY . .
 COPY . /app 
 
 # Explicitly copy the keys folder into the container's working directory (/app)
-#COPY ./keys /app/keys 
+COPY ./keys /app/keys 
 
 # Ensure this is done before running npm install if the key is bundled later
 # and before the CMD/ENTRYPOINT runs

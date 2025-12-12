@@ -11,7 +11,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="scans.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
 
 <body>
@@ -83,6 +82,15 @@
           <h2>New Scan</h2>
           
           <form id="newscan-form" novalidate>
+            <!-- Scan Mode Selection -->
+            <div class="ns-field">
+              <label class="ns-label">Scan Mode</label>
+              <div class="ns-radio-group">
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="normal" checked /> Normal Scan</label>
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="deep-single" /> Deep Single Target</label>
+                <label class="ns-radio"><input type="radio" name="ns-scan-mode" value="deep-multiple" /> Deep Multiple Targets</label>
+              </div>
+            </div>
 
             <!-- Normal Scan Target Section -->
             <div id="ns-target-section" class="ns-field">
