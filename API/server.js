@@ -1970,13 +1970,20 @@ const io = socketIo(server);
 io.sockets.setMaxListeners(40);
 require('events').EventEmitter.defaultMaxListeners = 40;
 // Security middlewares
-const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',').map(s => s.trim());
+// CORS configuration: allow extra local dev origins by default and
+// support CORS_ALLOW_ALL=true to disable origin checks (useful for local testing).
+const defaultOrigins = 'http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:3000';
+const allowedOrigins = (process.env.CORS_ORIGINS || defaultOrigins).split(',').map(s => s.trim()).filter(Boolean);
+const allowAll = String(process.env.CORS_ALLOW_ALL || 'false').toLowerCase() === 'true';
 app.use(cors({
   origin: function(origin, callback) {
+    if (allowAll) return callback(null, true);
+    // Allow non-browser requests with no origin (e.g., curl, file://)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
     return callback(new Error('CORS policy: Origin not allowed'));
-  }
+  },
+  exposedHeaders: ['Authorization']
 }));
 
 app.use(helmet());
