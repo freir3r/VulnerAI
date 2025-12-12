@@ -125,18 +125,18 @@ const pagination = {
     status: '',
     type: ''
   },
-  
+
   applyFilters(scans) {
     const { search, status, type } = this.filters;
     return scans.filter(scan => {
       const matchesSearch = (scan.targetValue.toLowerCase().includes(search.toLowerCase()) ||
-                           (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
+        (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
       const matchesStatus = !status || scan.status === status;
       const matchesType = !type || scan.type === type;
       return matchesSearch && matchesStatus && matchesType;
     });
   },
-  
+
   getPaginatedItems(scans) {
     const filtered = this.applyFilters(scans);
     const start = (this.currentPage - 1) * this.itemsPerPage;
@@ -146,14 +146,14 @@ const pagination = {
       totalPages: Math.ceil(filtered.length / this.itemsPerPage)
     };
   },
-  
+
   renderPagination(totalItems, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
-    
+
     const totalPages = Math.ceil(totalItems / this.itemsPerPage);
     container.innerHTML = '';
-    
+
     // Previous button
     if (this.currentPage > 1) {
       const prevBtn = document.createElement('button');
@@ -165,7 +165,7 @@ const pagination = {
       });
       container.appendChild(prevBtn);
     }
-    
+
     // Page numbers
     for (let i = 1; i <= totalPages; i++) {
       const btn = document.createElement('button');
@@ -178,7 +178,7 @@ const pagination = {
       });
       container.appendChild(btn);
     }
-    
+
     // Next button
     if (this.currentPage < totalPages) {
       const nextBtn = document.createElement('button');
@@ -701,7 +701,7 @@ async function renderScansHistory() {
 
   scansList.style.display = 'grid';
   scansEmpty.style.display = 'none';
-  
+
   // Show pagination
   document.getElementById('history-pagination').style.display = 'flex';
 
@@ -1093,7 +1093,7 @@ function createModelFromApiStatus(scan) {
 }
 
 function updateScanResultsUI(model) {
- window.currentScanModel = model;
+  window.currentScanModel = model;
 
   // Update header
   document.getElementById("sr-target").textContent = model.targetValue;
@@ -1259,7 +1259,7 @@ function fillPortsTable(host) {
 
   // 🆕 TRY DIFFERENT DATA SOURCES
   let riskData = null;
-  
+
   // Try source 1: Model scanSummary
   if (window.currentScanModel?.scanSummary?.risk_assessment) {
     riskData = window.currentScanModel.scanSummary.risk_assessment;
@@ -1355,45 +1355,45 @@ function fillPortsTable(host) {
         </thead>
         <tbody>
           ${host.ports.map(port => {
-            // Extrair dados da estrutura do Firebase
-            const portNumber = port.port;
-            const service = port.service || {};
-            
-            // Construir nome do serviço com product + version
-            let serviceDisplay = service.name || 'Unknown';
-            if (service.product) {
-              serviceDisplay = service.product;
-              if (service.version) {
-                serviceDisplay += ` ${service.version}`;
-              }
-            }
-            
-            // Status da porta
-            const status = port.state || 'unknown';
-            const statusClass = `status-${status}`;
-            const statusText = status.charAt(0).toUpperCase() + status.slice(1);
-            
-            // Detalhes adicionais
-            const details = [];
-            if (service.extrainfo) details.push(service.extrainfo);
-            if (service.tunnel) details.push(`Tunnel: ${service.tunnel}`);
-            if (service.ostype) details.push(`OS: ${service.ostype}`);
-            
-            const detailsText = details.length > 0 ? details.join(' • ') : '';
+    // Extrair dados da estrutura do Firebase
+    const portNumber = port.port;
+    const service = port.service || {};
 
-            return `
+    // Construir nome do serviço com product + version
+    let serviceDisplay = service.name || 'Unknown';
+    if (service.product) {
+      serviceDisplay = service.product;
+      if (service.version) {
+        serviceDisplay += ` ${service.version}`;
+      }
+    }
+
+    // Status da porta
+    const status = port.state || 'unknown';
+    const statusClass = `status-${status}`;
+    const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
+    // Detalhes adicionais
+    const details = [];
+    if (service.extrainfo) details.push(service.extrainfo);
+    if (service.tunnel) details.push(`Tunnel: ${service.tunnel}`);
+    if (service.ostype) details.push(`OS: ${service.ostype}`);
+
+    const detailsText = details.length > 0 ? details.join(' • ') : '';
+
+    return `
               <tr>
                 <td><strong>${portNumber}</strong></td>
                 <td>
                   <div style="font-weight: 500; color: var(--ink);">${serviceDisplay}</div>
-                  ${service.name && service.name !== serviceDisplay ? 
-                    `<div style="font-size: 0.85em; color: var(--muted); margin-top: 2px;">${service.name}</div>` : ''}
+                  ${service.name && service.name !== serviceDisplay ?
+        `<div style="font-size: 0.85em; color: var(--muted); margin-top: 2px;">${service.name}</div>` : ''}
                 </td>
                 <td><span class="${statusClass}">${statusText}</span></td>
                 <td style="font-size: 0.85em; color: var(--muted); max-width: 200px;">${detailsText}</td>
               </tr>
             `;
-          }).join('')}
+  }).join('')}
         </tbody>
       </table>
     </div>
@@ -1406,9 +1406,9 @@ function fillPortsTable(host) {
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
           ${host.risk_assessment.findings
-            .filter(finding => finding.risk === 'HIGH' || finding.risk === 'CRITICAL')
-            .slice(0, 3) // Mostrar apenas as top 3 críticas
-            .map(finding => `
+        .filter(finding => finding.risk === 'HIGH' || finding.risk === 'CRITICAL')
+        .slice(0, 3) // Mostrar apenas as top 3 críticas
+        .map(finding => `
               <div class="recommendation-item ${finding.risk.toLowerCase()}" style="display: flex; align-items: flex-start; padding: 12px; border-radius: 6px; border-left: 4px solid ${getRiskBorderColor(finding.risk)}; background: ${getRiskBackgroundColor(finding.risk)};">
                 <div class="rec-severity-badge" style="padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; margin-right: 12px; min-width: 60px; text-align: center; background: ${getRiskBadgeColor(finding.risk)}; color: white;">
                   ${finding.risk}
@@ -1430,7 +1430,7 @@ function fillPortsTable(host) {
 }
 // Funções auxiliares para cores baseadas no risco
 function getRiskColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#ffc107';
@@ -1441,7 +1441,7 @@ function getRiskColor(risk) {
 }
 
 function getRiskBorderColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#ffc107';
@@ -1450,7 +1450,7 @@ function getRiskBorderColor(risk) {
 }
 
 function getRiskBackgroundColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#f8d7da';
     case 'high': return '#fff3cd';
     case 'medium': return '#e7f1ff';
@@ -1459,7 +1459,7 @@ function getRiskBackgroundColor(risk) {
 }
 
 function getRiskBadgeColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#0d6efd';
@@ -1700,22 +1700,42 @@ async function init() {
     e.preventDefault();
     if (!tos?.checked) return alert('Please accept the Terms first.');
 
+    // --- 1. FUNÇÃO DE LIMPEZA (SANITIZATION) ---
+    // Remove scripts maliciosos. Se o DOMPurify não carregar, remove < e >.
+    const sanitize = (input) => {
+      if (typeof DOMPurify !== 'undefined') {
+        return DOMPurify.sanitize(input, { USE_PROFILES: { html: false } });
+      }
+      return input ? input.replace(/[<>]/g, '') : '';
+    };
+
+    // --- 2. OBTER E LIMPAR DADOS ---
+    // Obtemos os valores brutos dos campos
+    const rawScanName = scanNameInp?.value || '';
+    const rawTargetValue = targetInp?.value || '';
+
+    // Criamos variáveis LIMPAS para usar na lógica
+    const scanName = sanitize(rawScanName).trim();
+
+    // O targetValue inicial é o que o utilizador escreveu (limpo)
+    let targetValue = sanitize(rawTargetValue).trim();
+
+    // Obter outros valores (radios/selects são seguros por natureza)
     const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
     const type = (document.querySelector('input[name="ns-type"]:checked')?.value) || 'quick';
     const proto = (document.querySelector('input[name="ns-proto"]:checked')?.value) || 'TCP';
-    const scanName = scanNameInp?.value.trim() || '';
 
-    let targetValue = '';
     let targetId = null;
     let targetIds = [];
 
-    // Obter dados baseado no modo de scan
+    // --- 3. LÓGICA DE SELEÇÃO (MANTIDA IGUAL) ---
     switch (scanMode) {
       case 'normal':
-        targetValue = (targetInp?.value || '').trim();
         const chosenId = chooseSel?.value || null;
+        // Se o input de texto estiver vazio E houver uma seleção no dropdown
         if (!targetValue && chosenId) {
           const t = state.targets.find(x => x.id === chosenId);
+          // Mesmo vindo da lista interna, tratamos como string simples
           targetValue = t?.value || '';
         }
         targetId = chosenId;
@@ -1740,24 +1760,29 @@ async function init() {
         break;
     }
 
+    // --- 4. VALIDAÇÃO FINAL ---
     if (!targetValue && !targetId && targetIds.length === 0) {
       return alert('Please choose or type a target.');
     }
 
-    if (startBtn) startBtn.disabled = true;
-    startBtn.textContent = 'Starting Scan...';
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Starting Scan...';
+    }
 
+    // --- 5. ENVIO SEGURO ---
     try {
       await addScan({
-        targetValue,
+        targetValue, // Valor limpo e validado
         targetId,
         targetIds,
         type,
         proto,
         scanMode,
-        scanName
+        scanName // Valor limpo
       });
     } catch (error) {
+      console.error(error);
       alert('Scan started with fallback mode (API unavailable)');
     } finally {
       if (startBtn) {
@@ -1771,229 +1796,229 @@ async function init() {
   document.getElementById('btn-show-history')?.addEventListener('click', showScansHistoryView);
   document.getElementById('btn-show-history-results')?.addEventListener('click', showScansHistoryView);
 
-/* SCANS HISTORY ACTIONS */
-document.getElementById('scans-list')?.addEventListener('click', async (e) => {
-  console.log('🎯 [DEBUG] Click event detected on:', e.target);
-  
-  const btn = e.target.closest('button[data-action]');
-  console.log('🔘 [DEBUG] Closest button found:', btn);
-  
-  if (!btn) {
-    console.log('❌ [DEBUG] No button with data-action found');
-    return;
-  }
+  /* SCANS HISTORY ACTIONS */
+  document.getElementById('scans-list')?.addEventListener('click', async (e) => {
+    console.log('🎯 [DEBUG] Click event detected on:', e.target);
 
-  const scanId = btn.dataset.scanId;
-  const action = btn.dataset.action;
-  
-  console.log('📋 [DEBUG] Action:', action, 'Scan ID:', scanId);
+    const btn = e.target.closest('button[data-action]');
+    console.log('🔘 [DEBUG] Closest button found:', btn);
 
-  if (btn.dataset.action === 'view-scan') {
-    console.log('🚀 [DEBUG] Calling viewHistoricalScan...');
-    await viewHistoricalScan(scanId);
-  }
-
-  if (btn.dataset.action === 'rescan') {
-    console.log('🔄 [DEBUG] Calling setupRescan...');
-    await setupRescan(scanId);
-  }
-
-  if (btn.dataset.action === 'export-csv') {
-    console.log('📊 [DEBUG] Calling exportScanToCSV...');
-    exportScanToCSV(scanId);
-  }
-});
-
-// 🆕 NOVA FUNÇÃO: Carregar e mostrar scan histórico completo
-async function viewHistoricalScan(scanId) {
-  try {
-    console.log('📋 Loading historical scan:', scanId);
-    
-    // 1. Mostrar loading screen
-    showActiveScanView();
-    document.getElementById('scan-loading').style.display = 'block';
-    document.getElementById('scan-results-content').style.display = 'none';
-    document.getElementById('loading-target').textContent = 'Loading historical scan results...';
-
-    // 2. Buscar dados COMPLETOS do scan da Firebase
-    const scanDetails = await nmapAPI.getScanStatus(scanId);
-    console.log('📊 Historical scan details:', scanDetails);
-
-    // 3. Processar e mostrar resultados
-    if (scanDetails && scanDetails.scan) {
-      // Criar model completo com os dados da Firebase
-      const model = createModelFromApiResponse(scanDetails);
-      
-      // Esconder loading e mostrar resultados
-      document.getElementById('scan-loading').style.display = 'none';
-      document.getElementById('scan-results-content').style.display = 'block';
-      
-      // Renderizar com dados reais
-      updateScanResultsUI(model);
-      
-      // Atualizar estado local
-      updateLocalScanState(scanId, scanDetails);
-    } else {
-      throw new Error('No scan data found');
-    }
-
-  } catch (error) {
-    console.error('❌ Error loading historical scan:', error);
-    
-    // Fallback: usar dados locais se disponíveis
-    const localScan = state.scans.find(s => s.id === scanId);
-    if (localScan) {
-      document.getElementById('scan-loading').style.display = 'none';
-      document.getElementById('scan-results-content').style.display = 'block';
-      renderScanResultsPage(); // Usa dados locais
-    } else {
-      alert('Error loading scan results. Please try again.');
-      showScansHistoryView();
-    }
-  }
-}
-
-// 🆕 FUNÇÃO AUXILIAR: Atualizar estado local com dados frescos
-function updateLocalScanState(scanId, apiData) {
-  const scanIndex = state.scans.findIndex(s => s.id === scanId);
-  if (scanIndex !== -1) {
-    state.scans[scanIndex].apiStatus = apiData;
-    state.scans[scanIndex].status = 'Completed';
-    
-    // Mover para topo temporariamente para display
-    const [selectedScan] = state.scans.splice(scanIndex, 1);
-    state.scans.unshift(selectedScan);
-    saveScans(state.scans);
-  }
-}
-
-// 🆕 NOVA FUNÇÃO: Configurar rescan com dados pré-preenchidos
-async function setupRescan(scanId) {
-  try {
-    // 1. Buscar dados do scan original
-    state.scans = await loadScans();
-    const originalScan = state.scans.find(s => s.id === scanId);
-    
-    if (!originalScan) {
-      alert('Scan not found');
+    if (!btn) {
+      console.log('❌ [DEBUG] No button with data-action found');
       return;
     }
 
-    console.log('🔄 Setting up rescan for:', originalScan);
+    const scanId = btn.dataset.scanId;
+    const action = btn.dataset.action;
 
-    // 2. Mostrar o modal de novo scan
-    showNewScanModal();
+    console.log('📋 [DEBUG] Action:', action, 'Scan ID:', scanId);
 
-    // 3. Pré-preencher os campos baseado no scan original
-    setTimeout(() => {
-      prefillRescanForm(originalScan);
-    }, 100); // Pequeno delay para garantir que o modal está renderizado
-
-  } catch (error) {
-    console.error('Error setting up rescan:', error);
-    alert('Error setting up rescan');
-  }
-}
-
-// 🆕 FUNÇÃO: Pré-preencher o formulário com dados do scan original
-function prefillRescanForm(originalScan) {
-  console.log('📝 Prefilling form with:', originalScan);
-
-  // 1. Scan Name - adicionar "Rescan" ao nome original
-  const scanNameInput = document.getElementById('ns-scan-name');
-  if (scanNameInput) {
-    const originalName = originalScan.scan_name || originalScan.targetValue || 'Scan';
-    scanNameInput.value = `Rescan of ${originalName}`;
-  }
-
-  // 2. Determinar modo de scan baseado no original
-  let scanMode = 'normal';
-  if (originalScan.scan_mode === 'deep-single') {
-    scanMode = 'deep-single';
-  } else if (originalScan.scan_mode === 'deep-multiple') {
-    scanMode = 'deep-multiple';
-  }
-
-  // 3. Selecionar o modo de scan correto
-  const scanModeRadio = document.querySelector(`input[name="ns-scan-mode"][value="${scanMode}"]`);
-  if (scanModeRadio) {
-    scanModeRadio.checked = true;
-    updateScanModeUI(); // Atualizar UI baseado no modo
-  }
-
-  // 4. Pré-preencher baseado no modo de scan
-  setTimeout(() => {
-    switch (scanMode) {
-      case 'normal':
-        prefillNormalRescan(originalScan);
-        break;
-      case 'deep-single':
-        prefillDeepSingleRescan(originalScan);
-        break;
-      case 'deep-multiple':
-        prefillDeepMultipleRescan(originalScan);
-        break;
+    if (btn.dataset.action === 'view-scan') {
+      console.log('🚀 [DEBUG] Calling viewHistoricalScan...');
+      await viewHistoricalScan(scanId);
     }
-    
-    updateStartEnabled(); // Atualizar estado do botão Start
-  }, 200);
-}
 
-// 🆕 FUNÇÃO: Pré-preencher para scan normal
-function prefillNormalRescan(originalScan) {
-  const targetInput = document.getElementById('ns-target');
-  const chooseSelect = document.getElementById('ns-choose');
-  
-  if (targetInput && originalScan.targetValue) {
-    targetInput.value = originalScan.targetValue;
-  }
-  
-  // Tentar selecionar no dropdown de targets salvos
-  if (chooseSelect && originalScan.targetId) {
-    chooseSelect.value = originalScan.targetId;
-  }
+    if (btn.dataset.action === 'rescan') {
+      console.log('🔄 [DEBUG] Calling setupRescan...');
+      await setupRescan(scanId);
+    }
 
-  // Selecionar tipo de scan (quick/deep)
-  const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
-  const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
-  if (scanTypeRadio) {
-    scanTypeRadio.checked = true;
-  }
+    if (btn.dataset.action === 'export-csv') {
+      console.log('📊 [DEBUG] Calling exportScanToCSV...');
+      exportScanToCSV(scanId);
+    }
+  });
 
-  // Selecionar protocolo
-  const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
-  if (protoRadio) {
-    protoRadio.checked = true;
-  }
-}
+  // 🆕 NOVA FUNÇÃO: Carregar e mostrar scan histórico completo
+  async function viewHistoricalScan(scanId) {
+    try {
+      console.log('📋 Loading historical scan:', scanId);
 
-// 🆕 FUNÇÃO: Pré-preencher para deep single
-function prefillDeepSingleRescan(originalScan) {
-  if (originalScan.targetId) {
-    // Selecionar o target no radio button
-    setTimeout(() => {
-      const targetRadio = document.querySelector(`input[name="ns-selected-target"][value="${originalScan.targetId}"]`);
-      if (targetRadio) {
-        targetRadio.checked = true;
+      // 1. Mostrar loading screen
+      showActiveScanView();
+      document.getElementById('scan-loading').style.display = 'block';
+      document.getElementById('scan-results-content').style.display = 'none';
+      document.getElementById('loading-target').textContent = 'Loading historical scan results...';
+
+      // 2. Buscar dados COMPLETOS do scan da Firebase
+      const scanDetails = await nmapAPI.getScanStatus(scanId);
+      console.log('📊 Historical scan details:', scanDetails);
+
+      // 3. Processar e mostrar resultados
+      if (scanDetails && scanDetails.scan) {
+        // Criar model completo com os dados da Firebase
+        const model = createModelFromApiResponse(scanDetails);
+
+        // Esconder loading e mostrar resultados
+        document.getElementById('scan-loading').style.display = 'none';
+        document.getElementById('scan-results-content').style.display = 'block';
+
+        // Renderizar com dados reais
+        updateScanResultsUI(model);
+
+        // Atualizar estado local
+        updateLocalScanState(scanId, scanDetails);
+      } else {
+        throw new Error('No scan data found');
       }
-    }, 300); // Dar tempo para a UI atualizar
-  }
-}
 
-// 🆕 FUNÇÃO: Pré-preencher para deep multiple
-function prefillDeepMultipleRescan(originalScan) {
-  if (originalScan.targetIds && originalScan.targetIds.length > 0) {
-    // Selecionar os targets nos checkboxes
-    setTimeout(() => {
-      originalScan.targetIds.forEach(targetId => {
-        const targetCheckbox = document.querySelector(`input[name="ns-selected-targets"][value="${targetId}"]`);
-        if (targetCheckbox) {
-          targetCheckbox.checked = true;
-        }
-      });
-    }, 300); // Dar tempo para a UI atualizar
+    } catch (error) {
+      console.error('❌ Error loading historical scan:', error);
+
+      // Fallback: usar dados locais se disponíveis
+      const localScan = state.scans.find(s => s.id === scanId);
+      if (localScan) {
+        document.getElementById('scan-loading').style.display = 'none';
+        document.getElementById('scan-results-content').style.display = 'block';
+        renderScanResultsPage(); // Usa dados locais
+      } else {
+        alert('Error loading scan results. Please try again.');
+        showScansHistoryView();
+      }
+    }
   }
-}
+
+  // 🆕 FUNÇÃO AUXILIAR: Atualizar estado local com dados frescos
+  function updateLocalScanState(scanId, apiData) {
+    const scanIndex = state.scans.findIndex(s => s.id === scanId);
+    if (scanIndex !== -1) {
+      state.scans[scanIndex].apiStatus = apiData;
+      state.scans[scanIndex].status = 'Completed';
+
+      // Mover para topo temporariamente para display
+      const [selectedScan] = state.scans.splice(scanIndex, 1);
+      state.scans.unshift(selectedScan);
+      saveScans(state.scans);
+    }
+  }
+
+  // 🆕 NOVA FUNÇÃO: Configurar rescan com dados pré-preenchidos
+  async function setupRescan(scanId) {
+    try {
+      // 1. Buscar dados do scan original
+      state.scans = await loadScans();
+      const originalScan = state.scans.find(s => s.id === scanId);
+
+      if (!originalScan) {
+        alert('Scan not found');
+        return;
+      }
+
+      console.log('🔄 Setting up rescan for:', originalScan);
+
+      // 2. Mostrar o modal de novo scan
+      showNewScanModal();
+
+      // 3. Pré-preencher os campos baseado no scan original
+      setTimeout(() => {
+        prefillRescanForm(originalScan);
+      }, 100); // Pequeno delay para garantir que o modal está renderizado
+
+    } catch (error) {
+      console.error('Error setting up rescan:', error);
+      alert('Error setting up rescan');
+    }
+  }
+
+  // 🆕 FUNÇÃO: Pré-preencher o formulário com dados do scan original
+  function prefillRescanForm(originalScan) {
+    console.log('📝 Prefilling form with:', originalScan);
+
+    // 1. Scan Name - adicionar "Rescan" ao nome original
+    const scanNameInput = document.getElementById('ns-scan-name');
+    if (scanNameInput) {
+      const originalName = originalScan.scan_name || originalScan.targetValue || 'Scan';
+      scanNameInput.value = `Rescan of ${originalName}`;
+    }
+
+    // 2. Determinar modo de scan baseado no original
+    let scanMode = 'normal';
+    if (originalScan.scan_mode === 'deep-single') {
+      scanMode = 'deep-single';
+    } else if (originalScan.scan_mode === 'deep-multiple') {
+      scanMode = 'deep-multiple';
+    }
+
+    // 3. Selecionar o modo de scan correto
+    const scanModeRadio = document.querySelector(`input[name="ns-scan-mode"][value="${scanMode}"]`);
+    if (scanModeRadio) {
+      scanModeRadio.checked = true;
+      updateScanModeUI(); // Atualizar UI baseado no modo
+    }
+
+    // 4. Pré-preencher baseado no modo de scan
+    setTimeout(() => {
+      switch (scanMode) {
+        case 'normal':
+          prefillNormalRescan(originalScan);
+          break;
+        case 'deep-single':
+          prefillDeepSingleRescan(originalScan);
+          break;
+        case 'deep-multiple':
+          prefillDeepMultipleRescan(originalScan);
+          break;
+      }
+
+      updateStartEnabled(); // Atualizar estado do botão Start
+    }, 200);
+  }
+
+  // 🆕 FUNÇÃO: Pré-preencher para scan normal
+  function prefillNormalRescan(originalScan) {
+    const targetInput = document.getElementById('ns-target');
+    const chooseSelect = document.getElementById('ns-choose');
+
+    if (targetInput && originalScan.targetValue) {
+      targetInput.value = originalScan.targetValue;
+    }
+
+    // Tentar selecionar no dropdown de targets salvos
+    if (chooseSelect && originalScan.targetId) {
+      chooseSelect.value = originalScan.targetId;
+    }
+
+    // Selecionar tipo de scan (quick/deep)
+    const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
+    const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
+    if (scanTypeRadio) {
+      scanTypeRadio.checked = true;
+    }
+
+    // Selecionar protocolo
+    const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
+    if (protoRadio) {
+      protoRadio.checked = true;
+    }
+  }
+
+  // 🆕 FUNÇÃO: Pré-preencher para deep single
+  function prefillDeepSingleRescan(originalScan) {
+    if (originalScan.targetId) {
+      // Selecionar o target no radio button
+      setTimeout(() => {
+        const targetRadio = document.querySelector(`input[name="ns-selected-target"][value="${originalScan.targetId}"]`);
+        if (targetRadio) {
+          targetRadio.checked = true;
+        }
+      }, 300); // Dar tempo para a UI atualizar
+    }
+  }
+
+  // 🆕 FUNÇÃO: Pré-preencher para deep multiple
+  function prefillDeepMultipleRescan(originalScan) {
+    if (originalScan.targetIds && originalScan.targetIds.length > 0) {
+      // Selecionar os targets nos checkboxes
+      setTimeout(() => {
+        originalScan.targetIds.forEach(targetId => {
+          const targetCheckbox = document.querySelector(`input[name="ns-selected-targets"][value="${targetId}"]`);
+          if (targetCheckbox) {
+            targetCheckbox.checked = true;
+          }
+        });
+      }, 300); // Dar tempo para a UI atualizar
+    }
+  }
 
 
   /* SCANS CONTROLS */
