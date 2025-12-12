@@ -219,6 +219,88 @@ const RISK_RULES = {
       points: 30,
       description: 'Weak encryption or configuration detected'
     }
+  ],
+
+  CVE_RULES: [
+    {
+      condition: (cve) => cve.CVSS?.score >= 9.0,
+      risk: 'CRITICAL',
+      points: 50,
+      description: 'Critical severity CVE detected'
+    },
+    {
+      condition: (cve) => cve.CVSS?.score >= 7.0 && cve.CVSS?.score < 9.0,
+      risk: 'HIGH',
+      points: 35,
+      description: 'High severity CVE detected'
+    },
+    {
+      condition: (cve) => cve.CVSS?.score >= 4.0 && cve.CVSS?.score < 7.0,
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'Medium severity CVE detected'
+    },
+    {
+      condition: (cve) => cve.exploit_available === true,
+      risk: 'HIGH',
+      points: 30,
+      description: 'CVE with known exploit available'
+    },
+    {
+      condition: (cve) => {
+        const currentYear = new Date().getFullYear();
+        const cveYear = parseInt(cve.cve_id.match(/CVE-(\d{4})/)?.[1]) || currentYear;
+        return currentYear - cveYear <= 1; // CVE from last year
+      },
+      risk: 'HIGH',
+      points: 25,
+      description: 'Recent CVE (less than 1 year old)'
+    },
+    {
+      condition: (cve) => {
+        const currentYear = new Date().getFullYear();
+        const cveYear = parseInt(cve.cve_id.match(/CVE-(\d{4})/)?.[1]) || currentYear;
+        return currentYear - cveYear >= 5; // Old CVE
+      },
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Old CVE (5+ years) - likely unpatched system'
+    }
+  ],
+  WEB_SERVER_RULES: [
+    {
+      condition: (service) => service.name === 'http' && !service.tunnel,
+      risk: 'MEDIUM',
+      points: 20,
+      description: 'HTTP without encryption'
+    },
+    {
+      condition: (service) => service.name === 'http' && service.product?.includes('nginx'),
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Nginx web server detected'
+    },
+    {
+      condition: (service) => service.name === 'http' && service.version &&
+        (service.product?.includes('Apache') || service.product?.includes('httpd')),
+      risk: 'MEDIUM',
+      points: 15,
+      description: 'Apache web server detected'
+    },
+    {
+      condition: (service) => service.name === 'http' && service.version &&
+        parseFloat(service.version) < 2.4,
+      risk: 'HIGH',
+      points: 25,
+      description: 'Outdated Apache version'
+    },
+    {
+      condition: (service) => service.name === 'http' && service.version &&
+        service.product?.includes('nginx') && parseFloat(service.version) < 1.18,
+      risk: 'HIGH',
+      points: 25,
+      description: 'Outdated Nginx version'
+    }
   ]
 };
 
@@ -237,7 +319,7 @@ class RiskAssessmentExpert {
 
     console.log(`🔍 [AI Risk Assessment] Analyzing host: ${host.host}`);
 
-    // Analisar cada porta do host
+    // ===== 1. ANALYZE PORTS AND SERVICES (existing code) =====
     host.ports.forEach(port => {
       const portNum = parseInt(port.port);
       const service = port.service || {};
@@ -297,8 +379,15 @@ class RiskAssessmentExpert {
       });
     });
 
-    // Determinar risco final baseado no score acumulado
-    const finalRisk = this.calculateFinalRisk(hostRiskScore);
+    // ===== 2. NEW: ANALYZE CVEs (MISSING IN YOUR CODE!) =====
+    const cveAssessment = this.assessCVEsForHost(host);
+    hostRiskScore += cveAssessment.cveRiskScore;
+    hostFindings.push(...cveAssessment.cveFindings);
+
+    console.log(`📊 [CVE Analysis] ${host.host} - Found ${cveAssessment.totalCVEs} CVEs, CVE Risk Score: ${cveAssessment.cveRiskScore}`);
+
+    // ===== 3. DETERMINE FINAL RISK (updated with CVE weighting) =====
+    const finalRisk = this.calculateFinalRiskWithCVEs(hostRiskScore, cveAssessment);
 
     console.log(`🎯 [AI Risk Assessment] ${host.host} - Final Score: ${hostRiskScore}, Risk: ${finalRisk}`);
 
@@ -310,8 +399,143 @@ class RiskAssessmentExpert {
       findings: hostFindings,
       openPorts: host.open_ports_count,
       device_type: host.device_type,
-      assessment_timestamp: new Date().toISOString()
+      assessment_timestamp: new Date().toISOString(),
+      // NEW: Include CVE summary
+      cve_summary: {
+        total: cveAssessment.totalCVEs,
+        critical: cveAssessment.criticalCVEs,
+        high: cveAssessment.highCVEs,
+        medium: cveAssessment.mediumCVEs
+      }
     };
+  }
+
+  // ===== NEW: CVE ASSESSMENT METHOD =====
+  assessCVEsForHost(host) {
+    const cveFindings = [];
+    let cveRiskScore = 0;
+
+    // Extract all CVEs from all ports
+    const allCVEs = [];
+    host.ports.forEach(port => {
+      if (port.cves && Array.isArray(port.cves)) {
+        allCVEs.push(...port.cves.map(cve => ({
+          ...cve,
+          port: port.port,
+          service: port.service?.name
+        })));
+      }
+    });
+
+    // Remove duplicate CVEs (same CVE might appear in multiple scripts)
+    const uniqueCVEs = [];
+    allCVEs.forEach(cve => {
+      if (!uniqueCVEs.some(uc => uc.cve_id === cve.cve_id)) {
+        uniqueCVEs.push(cve);
+      }
+    });
+
+    // Count CVEs by severity
+    let criticalCVEs = 0;
+    let highCVEs = 0;
+    let mediumCVEs = 0;
+    let lowCVEs = 0;
+
+    // Assess each CVE
+    uniqueCVEs.forEach(cve => {
+      const cvssScore = cve.CVSS?.score || 0;
+
+      // Count by severity
+      if (cvssScore >= 9.0) criticalCVEs++;
+      else if (cvssScore >= 7.0) highCVEs++;
+      else if (cvssScore >= 4.0) mediumCVEs++;
+      else if (cvssScore > 0) lowCVEs++;
+
+      // Calculate CVE risk points
+      if (cvssScore >= 9.0) {
+        cveRiskScore += 50; // Critical CVE
+        cveFindings.push({
+          type: 'CVE_RISK',
+          cve_id: cve.cve_id,
+          risk: 'CRITICAL',
+          description: `Critical CVE detected: ${cve.cve_id} (CVSS: ${cvssScore})`,
+          points: 50,
+          cvss_score: cvssScore,
+          port: cve.port,
+          service: cve.service,
+          evidence: `CVE ${cve.cve_id} on port ${cve.port}`
+        });
+      } else if (cvssScore >= 7.0) {
+        cveRiskScore += 35; // High CVE
+        cveFindings.push({
+          type: 'CVE_RISK',
+          cve_id: cve.cve_id,
+          risk: 'HIGH',
+          description: `High severity CVE: ${cve.cve_id} (CVSS: ${cvssScore})`,
+          points: 35,
+          cvss_score: cvssScore,
+          port: cve.port,
+          service: cve.service,
+          evidence: `CVE ${cve.cve_id} on port ${cve.port}`
+        });
+      } else if (cvssScore >= 4.0) {
+        cveRiskScore += 20; // Medium CVE
+        cveFindings.push({
+          type: 'CVE_RISK',
+          cve_id: cve.cve_id,
+          risk: 'MEDIUM',
+          description: `Medium severity CVE: ${cve.cve_id} (CVSS: ${cvssScore})`,
+          points: 20,
+          cvss_score: cvssScore,
+          port: cve.port,
+          service: cve.service,
+          evidence: `CVE ${cve.cve_id} on port ${cve.port}`
+        });
+      }
+
+      // Extra points for exploits
+      if (cve.exploit_available) {
+        cveRiskScore += 30;
+        cveFindings.push({
+          type: 'CVE_EXPLOIT',
+          cve_id: cve.cve_id,
+          risk: 'HIGH',
+          description: `CVE with known exploit available: ${cve.cve_id}`,
+          points: 30,
+          cvss_score: cvssScore,
+          evidence: 'Known exploit in wild'
+        });
+      }
+    });
+
+    return {
+      cveFindings,
+      cveRiskScore,
+      totalCVEs: uniqueCVEs.length,
+      criticalCVEs,
+      highCVEs,
+      mediumCVEs,
+      lowCVEs
+    };
+  }
+
+  // ===== UPDATED: FINAL RISK CALCULATION WITH CVEs =====
+  calculateFinalRiskWithCVEs(totalScore, cveAssessment) {
+    // Base risk from your existing calculation
+    let risk = this.calculateFinalRisk(totalScore);
+
+    // Adjust risk based on CVEs
+    if (cveAssessment.criticalCVEs > 0) {
+      // Critical CVEs automatically make it HIGH or CRITICAL
+      if (risk === 'LOW') risk = 'HIGH';
+      if (risk === 'MEDIUM') risk = 'CRITICAL';
+    } else if (cveAssessment.highCVEs >= 3) {
+      // Multiple high CVEs increase risk
+      if (risk === 'LOW') risk = 'MEDIUM';
+      if (risk === 'MEDIUM') risk = 'HIGH';
+    }
+
+    return risk;
   }
 
   calculateFinalRisk(score) {
@@ -322,15 +546,20 @@ class RiskAssessmentExpert {
     return 'INFO';
   }
 
-  // Avaliar todos os hosts do scan
+  // ===== UPDATED: ASSESS ALL HOSTS WITH CVE SUMMARY =====
   assessAllHosts() {
     const assessedHosts = this.scanResults.map(host => this.assessHost(host));
 
-    // Calcular estatísticas globais - CORRIGIDO
+    // Calculate statistics including CVEs
     const hostsWithRisk = assessedHosts.filter(h => h.riskScore !== undefined);
     const totalRiskScore = hostsWithRisk.reduce((sum, host) => sum + host.riskScore, 0);
     const averageRiskScore = hostsWithRisk.length > 0 ? totalRiskScore / hostsWithRisk.length : 0;
     const riskDistribution = this.calculateRiskDistribution(assessedHosts);
+
+    // CVE statistics across all hosts
+    const totalCVEs = assessedHosts.reduce((sum, host) => sum + (host.cve_summary?.total || 0), 0);
+    const criticalCVEs = assessedHosts.reduce((sum, host) => sum + (host.cve_summary?.critical || 0), 0);
+    const highCVEs = assessedHosts.reduce((sum, host) => sum + (host.cve_summary?.high || 0), 0);
 
     return {
       assessedHosts,
@@ -338,10 +567,56 @@ class RiskAssessmentExpert {
         totalHosts: assessedHosts.length,
         averageRiskScore: Math.round(averageRiskScore * 100) / 100,
         riskDistribution,
-        overallRisk: this.calculateOverallRisk(assessedHosts),
-        totalFindings: assessedHosts.reduce((sum, host) => sum + (host.findings ? host.findings.length : 0), 0)
+        overallRisk: this.calculateOverallRiskWithCVEs(assessedHosts),
+        totalFindings: assessedHosts.reduce((sum, host) => sum + (host.findings ? host.findings.length : 0), 0),
+        // NEW: CVE statistics
+        cve_statistics: {
+          total_cves: totalCVEs,
+          critical_cves: criticalCVEs,
+          high_cves: highCVEs,
+          hosts_with_cves: assessedHosts.filter(h => h.cve_summary?.total > 0).length
+        }
       }
     };
+  }
+
+  // ===== NEW: OVERALL RISK CALCULATION WITH CVEs =====
+  calculateOverallRiskWithCVEs(hosts) {
+    if (!hosts || hosts.length === 0) return 'UNKNOWN';
+
+    const riskWeights = {
+      CRITICAL: 5,
+      HIGH: 4,
+      MEDIUM: 3,
+      LOW: 2,
+      INFO: 1
+    };
+
+    let weightedSum = 0;
+    let totalCriticalCVEs = 0;
+
+    hosts.forEach(host => {
+      weightedSum += riskWeights[host.finalRisk] || 1;
+
+      // Count critical CVEs across all hosts
+      if (host.cve_summary?.critical) {
+        totalCriticalCVEs += host.cve_summary.critical;
+      }
+    });
+
+    const averageWeight = weightedSum / hosts.length;
+
+    // Adjust based on critical CVEs
+    let adjustedWeight = averageWeight;
+    if (totalCriticalCVEs > 0) {
+      adjustedWeight += 0.5; // Critical CVEs increase overall risk
+    }
+
+    if (adjustedWeight >= 4.5) return 'CRITICAL';
+    if (adjustedWeight >= 3.5) return 'HIGH';
+    if (adjustedWeight >= 2.5) return 'MEDIUM';
+    if (adjustedWeight >= 1.5) return 'LOW';
+    return 'INFO';
   }
 
   calculateRiskDistribution(hosts) {
@@ -362,37 +637,12 @@ class RiskAssessmentExpert {
     return distribution;
   }
 
-  calculateOverallRisk(hosts) {
-    if (!hosts || hosts.length === 0) return 'UNKNOWN';
-
-    const riskWeights = {
-      CRITICAL: 5,
-      HIGH: 4,
-      MEDIUM: 3,
-      LOW: 2,
-      INFO: 1
-    };
-
-    const weightedSum = hosts.reduce((sum, host) => {
-      return host.finalRisk && riskWeights[host.finalRisk]
-        ? sum + riskWeights[host.finalRisk]
-        : sum;
-    }, 0);
-
-    const averageWeight = weightedSum / hosts.length;
-
-    if (averageWeight >= 4.5) return 'CRITICAL';
-    if (averageWeight >= 3.5) return 'HIGH';
-    if (averageWeight >= 2.5) return 'MEDIUM';
-    if (averageWeight >= 1.5) return 'LOW';
-    return 'INFO';
-  }
-
-  // Gerar recomendações baseadas nos findings
+  // ===== UPDATED: RECOMMENDATIONS WITH CVE SUPPORT =====
   generateRecommendations(assessedHosts) {
     const recommendations = [];
 
     assessedHosts.forEach(host => {
+      // Port/service based recommendations
       host.findings.forEach(finding => {
         if (finding.risk === 'HIGH' || finding.risk === 'CRITICAL') {
           recommendations.push({
@@ -400,19 +650,51 @@ class RiskAssessmentExpert {
             priority: finding.risk,
             issue: finding.description,
             action: this.generateAction(finding),
-            port: finding.port
+            port: finding.port,
+            type: finding.type,
+            cve_id: finding.cve_id || null,
+            cvss_score: finding.cvss_score || 0
           });
         }
       });
+
+      // NEW: CVE summary recommendations
+      if (host.cve_summary?.critical > 0) {
+        recommendations.push({
+          host: host.host,
+          priority: 'CRITICAL',
+          issue: `Found ${host.cve_summary.critical} critical CVEs on this host`,
+          action: 'Apply emergency patches immediately. Consider isolating from network.',
+          type: 'CVE_SUMMARY',
+          cve_count: host.cve_summary.critical
+        });
+      }
+
+      if (host.cve_summary?.high >= 3) {
+        recommendations.push({
+          host: host.host,
+          priority: 'HIGH',
+          issue: `Found ${host.cve_summary.high} high severity CVEs`,
+          action: 'Prioritize patching within 7 days. Review security configuration.',
+          type: 'CVE_SUMMARY',
+          cve_count: host.cve_summary.high
+        });
+      }
     });
 
-    // Ordenar por prioridade
+    // Sort by priority, then CVSS score
     return recommendations.sort((a, b) => {
       const priorityOrder = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
-      return priorityOrder[b.priority] - priorityOrder[a.priority];
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // If same priority, sort by CVSS score (for CVEs)
+      return (b.cvss_score || 0) - (a.cvss_score || 0);
     });
   }
 
+  // ===== UPDATED: ACTION GENERATOR WITH CVE SUPPORT =====
   generateAction(finding) {
     const actions = {
       'SSH version outdated': 'Upgrade SSH to latest version and disable weak algorithms',
@@ -421,10 +703,35 @@ class RiskAssessmentExpert {
       'Telnet service exposed': 'Replace Telnet with SSH immediately',
       'FTP service exposed': 'Use SFTP or FTPS instead of plain FTP',
       'VMware Authentication Daemon vulnerable version': 'Update VMware tools to latest version',
-      'Node.js service detected': 'Update Node.js and dependencies, security audit'
+      'Node.js service detected': 'Update Node.js and dependencies, security audit',
+      // NEW: CVE-specific actions
+      'Critical CVE detected': 'Apply emergency patch immediately. If no patch exists, implement workarounds or isolate system.',
+      'High severity CVE': 'Apply patch within 24 hours. Monitor for exploitation attempts.',
+      'Medium severity CVE': 'Apply patch within 7 days. Assess business impact.',
+      'CVE with known exploit available': 'HIGH PRIORITY - Patch immediately as exploit is publicly available.'
     };
 
-    return actions[finding.description.split(' - ')[0]] || 'Review configuration and apply security best practices';
+    // Try to match the full description first
+    if (actions[finding.description]) {
+      return actions[finding.description];
+    }
+
+    // Try to match by prefix
+    const prefix = finding.description.split(' - ')[0];
+    if (actions[prefix]) {
+      return actions[prefix];
+    }
+
+    // CVE-specific default actions
+    if (finding.type === 'CVE_RISK') {
+      return `Apply security patch for ${finding.cve_id}. Review vendor advisory for mitigation steps.`;
+    }
+
+    if (finding.type === 'CVE_EXPLOIT') {
+      return `URGENT: Patch ${finding.cve_id} immediately - known exploit in wild.`;
+    }
+
+    return 'Review configuration and apply security best practices';
   }
 }
 
@@ -769,6 +1076,51 @@ function isAllowedTarget(target) {
 // Device classification (keeping your existing functions but removing duplicates)
 const { toVendor, isRandomMac } = require('@network-utils/vendor-lookup');
 
+// Load OUI overrides (local file to improve vendor detection)
+const OUI_OVERRIDES_PATH = path.join(__dirname, 'oui-overrides-clean.json');
+let ouiOverrides = {};
+try {
+  const raw = fs.readFileSync(OUI_OVERRIDES_PATH, 'utf8');
+  ouiOverrides = JSON.parse(raw || '{}');
+  console.log('[OUI Overrides] Loaded', Object.keys(ouiOverrides).length, 'entries');
+} catch (e) {
+  console.log('[OUI Overrides] No overrides file found or failed to parse');
+  ouiOverrides = {};
+}
+
+// Load discovered OUI map to persist unknown OUIs seen at runtime
+const OUI_DISCOVERED_PATH = path.join(__dirname, 'oui-discovered.json');
+let ouiDiscovered = {};
+try {
+  const rawD = fs.readFileSync(OUI_DISCOVERED_PATH, 'utf8');
+  ouiDiscovered = JSON.parse(rawD || '{}');
+  console.log('[OUI Discovered] Loaded', Object.keys(ouiDiscovered).length, 'entries');
+} catch (e) {
+  ouiDiscovered = {};
+}
+
+// Load full OUI DB (optional, populated by tools/convert-ouitxt-to-json.js)
+const OUI_DB_PATH = path.join(__dirname, 'oui-db.json');
+let ouiDb = {};
+try {
+  const rawDb = fs.readFileSync(OUI_DB_PATH, 'utf8');
+  ouiDb = JSON.parse(rawDb || '{}');
+  console.log('[OUI DB] Loaded', Object.keys(ouiDb).length, 'entries');
+} catch (e) {
+  ouiDb = {};
+  console.log('[OUI DB] No OUI DB found at', OUI_DB_PATH);
+}
+
+// Attempt to load a maintained OUI library as another lookup option
+let ouiLib = null;
+try {
+  ouiLib = require('mac-oui-lookup');
+  console.log('[OUI Lib] loaded `mac-oui-lookup` package');
+} catch (e) {
+  ouiLib = null;
+  console.log('[OUI Lib] `mac-oui-lookup` not installed; using local DB and vendor-lookup fallback');
+}
+
 // ===== DEVICE CLASSIFICATION FUNCTIONS =====
 function classifyDevice(ipv4, mac, vendor, hostname) {
   // Default classification
@@ -782,26 +1134,105 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
   // Enhanced vendor detection from MAC
   if (!vendor && mac) {
     try {
-      // Check if it's a random MAC first
-      if (isRandomMac(mac)) {
-        detectedVendor = classifyRandomMac(macUpper);
-        if (detectedVendor !== 'Random MAC (Mobile Device)') {
-          classificationBasis = 'random_mac_pattern';
-          console.log(`📱 Mobile device detected: ${mac} → ${detectedVendor}`);
-        } else {
-          console.log(`[MAC Lookup] ${mac} is a random MAC address (mobile device privacy)`);
-          classificationBasis = 'random_mac';
-        }
+      // Normalize MAC: ensure uppercase and colon-separated
+      const normalizedMac = macUpper.includes(':') ? macUpper : macUpper.match(/.{1,2}/g) ? macUpper.match(/.{1,2}/g).join(':') : macUpper;
+
+      // Check if it's a random MAC first (mobile/device privacy)
+      if (isRandomMac(normalizedMac)) {
+        detectedVendor = classifyRandomMac(normalizedMac);
+        // Treat random MACs as mobile devices by default
+        classificationBasis = 'random_mac';
+        console.log(`[MAC Lookup] ${mac} appears to be a randomized MAC (privacy) → ${detectedVendor}`);
+        // Set preliminary device classification to mobile so UI shows phone/tablet
+        deviceType = 'Smartphone/Tablet';
+        deviceCategory = 'mobile';
+        confidence = 'medium-high';
       } else {
-        const vendorResult = toVendor(mac);
-        if (vendorResult && vendorResult !== '') {
-          detectedVendor = vendorResult;
-          classificationBasis = 'mac_oui';
-          console.log(`[MAC Lookup] ${mac} → ${detectedVendor}`);
+        // Check local overrides and local DB first (use plain hex OUI)
+        const ouiPrefix = normalizedMac.replace(/:/g, '').slice(0, 6);
+        if (ouiPrefix && ouiOverrides[ouiPrefix]) {
+          detectedVendor = ouiOverrides[ouiPrefix];
+          classificationBasis = 'oui_override';
+          console.log(`[OUI Override] ${normalizedMac} (${ouiPrefix}) → ${detectedVendor}`);
+        } else if (ouiPrefix && ouiDb[ouiPrefix]) {
+          detectedVendor = ouiDb[ouiPrefix];
+          classificationBasis = 'oui_db';
+          console.log(`[OUI DB] ${normalizedMac} (${ouiPrefix}) → ${detectedVendor}`);
         } else {
-          console.log(`[MAC Lookup] ${mac} → No vendor found in database`);
+          // Try offline OUI library first (if installed), then vendor-lookup package
+          let vendorName = '';
+          if (ouiLib) {
+            try {
+              let libRes = null;
+              if (typeof ouiLib === 'function') {
+                libRes = ouiLib(normalizedMac);
+              } else if (typeof ouiLib.parse === 'function') {
+                libRes = ouiLib.parse(normalizedMac);
+              } else if (typeof ouiLib.get === 'function') {
+                libRes = ouiLib.get(normalizedMac);
+              }
+
+              if (libRes) {
+                if (typeof libRes === 'string') vendorName = libRes;
+                else if (typeof libRes === 'object') vendorName = libRes.company || libRes.org || libRes.vendor || libRes.name || '';
+              }
+            } catch (e) {
+              // ignore library errors and fall back
+              vendorName = '';
+            }
+          }
+
+          // Fallback to existing vendor-lookup package if library didn't produce a name
+          if (!vendorName) {
+            const vendorResult = toVendor(normalizedMac);
+            if (vendorResult) {
+              if (typeof vendorResult === 'string') vendorName = vendorResult;
+              else if (typeof vendorResult === 'object') {
+                vendorName = vendorResult.company || vendorResult.org || vendorResult.vendor || vendorResult.name || '';
+              }
+            }
+          }
+
+          if (vendorName) {
+            detectedVendor = vendorName;
+            classificationBasis = 'mac_oui';
+            console.log(`[MAC Lookup] ${normalizedMac} → ${detectedVendor}`);
+          } else {
+            // Fallback: basic OUI prefix map for common consumer vendors
+            const fallbackMap = {
+              '1A56E1': 'Unknown Vendor (OUI 1A:56:E1)',
+              'AC6175': 'Huawei Technologies',
+              '58687A': 'Sagemcom Broadband SAS',
+              '7A29D9': 'Unknown Vendor (OUI 7A:29:D9)'
+            };
+            if (fallbackMap[ouiPrefix]) {
+              detectedVendor = fallbackMap[ouiPrefix];
+              classificationBasis = 'oui_fallback';
+              console.log(`[OUI Fallback] ${normalizedMac} → ${detectedVendor}`);
+            } else {
+              console.log(`[MAC Lookup] ${normalizedMac} → No vendor found in database`);
+            }
+          }
         }
       }
+
+      // Persist unseen OUI prefixes to discovered file for later review
+      try {
+        if (typeof ouiPrefix !== 'undefined' && ouiPrefix && !ouiOverrides[ouiPrefix]) {
+          if (!ouiDiscovered[ouiPrefix]) {
+            ouiDiscovered[ouiPrefix] = { vendor: detectedVendor || null, first_seen: new Date().toISOString() };
+            try {
+              fs.writeFileSync(OUI_DISCOVERED_PATH, JSON.stringify(ouiDiscovered, null, 2), 'utf8');
+              console.log(`[OUI Discovered] Recorded new OUI ${ouiPrefix} -> ${detectedVendor || 'unknown'}`);
+            } catch (wErr) {
+              console.log(`[OUI Discovered] Write failed for ${ouiPrefix}: ${wErr.message}`);
+            }
+          }
+        }
+      } catch (persistErr) {
+        console.log(`[OUI Discovered] Persist error: ${persistErr.message}`);
+      }
+
     } catch (error) {
       console.log(`[MAC Lookup] Error for ${mac}: ${error.message}`);
     }
@@ -825,6 +1256,22 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
     classificationBasis = classification.basis || classificationBasis;
   }
 
+  // Vendor-based heuristics to refine classification when possible
+  const vendorHeuristic = applyVendorHeuristics(vendorLower, hostnameLower, ipv4);
+  if (vendorHeuristic) {
+    // Only override when heuristic confidence is higher than current
+    const levels = { 'very-low': 0, low: 1, 'medium-low': 2, medium: 3, 'medium-high': 4, high: 5 };
+    const currentLevel = levels[confidence] || 1;
+    const heuristicLevel = levels[vendorHeuristic.confidence] || 3;
+    if (heuristicLevel >= currentLevel) {
+      deviceType = vendorHeuristic.deviceType || deviceType;
+      deviceCategory = vendorHeuristic.deviceCategory || deviceCategory;
+      confidence = vendorHeuristic.confidence || confidence;
+      classificationBasis = vendorHeuristic.basis || classificationBasis;
+      console.log(`[Vendor Heuristic] Applied heuristic for vendor=${vendorLower}: ${deviceType} (${deviceCategory})`);
+    }
+  }
+
   // Fallback classifications
   if (deviceType === 'Unknown Device') {
     if (!mac && !detectedVendor) {
@@ -841,6 +1288,16 @@ function classifyDevice(ipv4, mac, vendor, hostname) {
   }
 
   console.log(`🎯 CLASSIFICATION: ${deviceType} (${deviceCategory}) - Confidence: ${confidence} - Basis: ${classificationBasis}`);
+
+  // If classified as mobile but vendor is missing, provide a clear fallback label
+  try {
+    const vendorMissing = !detectedVendor || String(detectedVendor).toLowerCase().includes('unknown');
+    const isMobileCategory = deviceCategory === 'mobile' || deviceType.toLowerCase().includes('smartphone') || classificationBasis === 'random_mac';
+    if (isMobileCategory && vendorMissing) {
+      detectedVendor = 'Random/Private MAC (likely mobile)';
+      classificationBasis = classificationBasis === 'random_mac' ? classificationBasis : `${classificationBasis}|random_mac_fallback`;
+    }
+  } catch (e) { /* ignore */ }
 
   return {
     device_type: deviceType,
@@ -1156,6 +1613,38 @@ function getVirtualizationType(vendor, hostname) {
   if (vendor.includes('virtualbox')) return 'VirtualBox VM';
   if (hostname.includes('docker') || hostname.includes('container')) return 'Container';
   return 'Virtual Machine';
+}
+
+// Vendor-based heuristics: quick rules for common home/ISP devices
+function applyVendorHeuristics(vendorLower, hostnameLower, ipv4) {
+  if (!vendorLower && !hostnameLower) return null;
+
+  // Sagemcom devices are typically ISP-provided gateways/routers
+  if (vendorLower.includes('sagemcom') || vendorLower.includes('sagem')) {
+    return { deviceType: 'Network Gateway/Router', deviceCategory: 'networking', confidence: 'high', basis: 'vendor_heuristic' };
+  }
+
+  // Huawei often indicates network infrastructure or ISP gateway
+  if (vendorLower.includes('huawei')) {
+    return { deviceType: 'Network Infrastructure Device', deviceCategory: 'networking', confidence: 'high', basis: 'vendor_heuristic' };
+  }
+
+  // TP-Link, D-Link, Linksys, Netgear often are home routers or access points
+  if (vendorLower.includes('tplink') || vendorLower.includes('tp-link') || vendorLower.includes('d-link') || vendorLower.includes('dlink') || vendorLower.includes('linksys') || vendorLower.includes('netgear')) {
+    return { deviceType: 'Network Gateway/Router', deviceCategory: 'networking', confidence: 'high', basis: 'vendor_heuristic' };
+  }
+
+  // Generic consumer OUIs we couldn't map but that appear in home networks — assume gateway/device
+  if (vendorLower.includes('unknown vendor (oui') || vendorLower.includes('unknown vendor')) {
+    return { deviceType: 'Network Device', deviceCategory: 'networking', confidence: 'medium', basis: 'oui_heuristic' };
+  }
+
+  // If hostname suggests access point / router
+  if (hostnameLower && (hostnameLower.includes('router') || hostnameLower.includes('gateway') || hostnameLower.includes('ap-') || hostnameLower.includes('wifi'))) {
+    return { deviceType: 'Network Gateway/Router', deviceCategory: 'networking', confidence: 'high', basis: 'hostname_heuristic' };
+  }
+
+  return null;
 }
 
 // Run nmap scan
@@ -1973,16 +2462,45 @@ require('events').EventEmitter.defaultMaxListeners = 40;
 // CORS configuration: allow extra local dev origins by default and
 // support CORS_ALLOW_ALL=true to disable origin checks (useful for local testing).
 const defaultOrigins = 'http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:3000';
-const allowedOrigins = (process.env.CORS_ORIGINS || defaultOrigins).split(',').map(s => s.trim()).filter(Boolean);
-const allowAll = String(process.env.CORS_ALLOW_ALL || 'false').toLowerCase() === 'true';
+const rawOrigins = (process.env.CORS_ORIGINS || defaultOrigins).split(',').map(s => s.trim()).filter(Boolean);
+// Normalize origins (strip trailing slash, ensure protocol+host+port form)
+function normalizeOriginString(o) {
+  if (!o || typeof o !== 'string') return o;
+  try {
+    const u = new URL(o);
+    return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
+  } catch (e) {
+    // fallback: remove trailing slash
+    return o.replace(/\/$/, '');
+  }
+}
+const allowedOrigins = rawOrigins.map(normalizeOriginString);
+// Allow all origins in development by default to ease testing from different frontends.
+// In production, CORS must be explicitly configured via CORS_ALLOW_ALL or CORS_ORIGINS.
+const allowAllEnv = String(process.env.CORS_ALLOW_ALL || 'false').toLowerCase() === 'true';
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const allowAll = allowAllEnv || !isProduction;
+if (allowAll) console.log('[CORS] permissive mode enabled (allow all origins) — disable in production');
 app.use(cors({
-  origin: function(origin, callback) {
-    if (allowAll) return callback(null, true);
-    // Allow non-browser requests with no origin (e.g., curl, file://)
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+
+    // In development, allow all origins
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    // In production, use the configured origins
+    const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',').map(s => s.trim());
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+
+    console.log(`[CORS] Rejected origin: ${origin}`);
     return callback(new Error('CORS policy: Origin not allowed'));
   },
+  credentials: true,
   exposedHeaders: ['Authorization']
 }));
 
@@ -1991,9 +2509,21 @@ app.use(helmet());
 // Basic rate limiter to protect endpoints from abuse
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),
+  max: 200, // Increase the limit
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  message: 'Too many requests, please try again later.',
+  skip: (req) => {
+    // Skip rate limiting for these endpoints:
+    if (req.path === '/health') return true;
+    if (req.path.startsWith('/scan/') && req.method === 'GET') {
+      // This is likely a polling request for scan status
+      return true;
+    }
+    if (req.method === 'OPTIONS') return true;
+    return false;
+  }
 });
 app.use(apiLimiter);
 
@@ -2006,6 +2536,82 @@ function redactBearer(str) {
   return str.replace(/Bearer\s+[A-Za-z0-9\-_.=]+/g, 'Bearer [REDACTED]');
 }
 // exported for tests or external logging wrapper
+
+// --- OUI helper & test endpoints ---
+function lookupVendorForMac(rawMac) {
+  if (!rawMac || typeof rawMac !== 'string') return { error: 'invalid mac' };
+  const normalized = rawMac.toUpperCase().replace(/[^A-F0-9]/g, '').slice(0, 12);
+  const oui = normalized.slice(0, 6);
+  let vendor = null;
+  let source = null;
+
+  if (oui && ouiOverrides[oui]) {
+    vendor = ouiOverrides[oui];
+    source = 'overrides';
+  } else if (oui && ouiDb[oui]) {
+    vendor = ouiDb[oui];
+    source = 'local_db';
+  } else {
+    // try library if available
+    if (ouiLib) {
+      try {
+        let libRes = null;
+        if (typeof ouiLib.lookup === 'function') libRes = ouiLib.lookup(rawMac);
+        else if (typeof ouiLib.find === 'function') libRes = ouiLib.find(rawMac);
+        else if (typeof ouiLib.get === 'function') libRes = ouiLib.get(rawMac);
+        else if (typeof ouiLib === 'function') libRes = ouiLib(rawMac);
+        else if (typeof ouiLib.parse === 'function') libRes = ouiLib.parse(rawMac);
+        if (libRes) {
+          vendor = typeof libRes === 'string' ? libRes : (libRes.vendor || libRes.org || libRes.company || libRes.name || JSON.stringify(libRes));
+          source = 'library';
+        }
+      } catch (e) { /* fall through */ }
+    }
+
+    // fallback to vendor-lookup package
+    if (!vendor) {
+      try {
+        const vr = toVendor(rawMac);
+        if (vr) vendor = typeof vr === 'string' ? vr : (vr.vendor || vr.organization || vr.company || vr.name || null);
+        if (vendor) source = 'vendor-lookup';
+      } catch (e) { }
+    }
+  }
+
+  // last-resort fallback map
+  const fallbackMap = {
+    '1A56E1': 'Generic Consumer Vendor',
+    'AC6175': 'Huawei Technologies',
+    '58687A': 'Sagemcom Broadband SAS',
+    '7A29D9': 'Unknown Vendor (OUI 7A:29:D9)'
+  };
+  if (!vendor && oui && fallbackMap[oui]) {
+    vendor = fallbackMap[oui];
+    source = 'fallback';
+  }
+
+  return { mac: rawMac, hex: normalized, oui, vendor: vendor || null, source: source || null };
+}
+
+app.get('/oui/status', (req, res) => {
+  res.json({
+    ouiLibLoaded: !!ouiLib,
+    ouiDbEntries: Object.keys(ouiDb || {}).length,
+    overridesEntries: Object.keys(ouiOverrides || {}).length,
+    discoveredEntries: Object.keys(ouiDiscovered || {}).length
+  });
+});
+
+app.get('/oui/lookup', (req, res) => {
+  const mac = req.query.mac || req.query.m;
+  if (!mac) return res.status(400).json({ error: 'query param `mac` required' });
+  try {
+    const out = lookupVendorForMac(String(mac));
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
 exports.redactBearer = redactBearer;
 
 // Firebase ID token verification middleware
