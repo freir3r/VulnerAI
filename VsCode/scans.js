@@ -6,9 +6,14 @@ class NmapScanAPI {
 
   async _makeRequest(endpoint, options = {}) {
     try {
+      // refresh token if needed
+      await refreshTokenIfNeeded();
+      const auth = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+      const token = auth.token;
       const config = {
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...options.headers,
         },
         ...options
@@ -21,7 +26,15 @@ class NmapScanAPI {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let details = '';
+        try {
+          const txt = await response.text();
+          try { details = JSON.stringify(JSON.parse(txt)); } catch { details = txt; }
+        } catch (e) { details = 'Could not read response body'; }
+        const err = new Error(`HTTP error! status: ${response.status} - ${details}`);
+        err.status = response.status;
+        err.body = details;
+        throw err;
       }
 
       return await response.json();
@@ -89,6 +102,40 @@ const AUTH_KEY = 'vulnerai.auth';
 function isLoggedIn() {
   try { return !!JSON.parse(localStorage.getItem(AUTH_KEY)); }
   catch { return false; }
+}
+
+// Refresh Firebase ID token if older than 50 minutes
+async function refreshTokenIfNeeded() {
+  try {
+    const authObj = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+    if (!authObj || !authObj.token || !authObj.ts) return authObj.token;
+    const ageMs = Date.now() - (authObj.ts || 0);
+    if (ageMs < 50 * 60 * 1000) return authObj.token;
+
+    const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+    const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+    const { initializeApp, getApps } = appMod;
+    const { getAuth, getIdToken } = authMod;
+    const firebaseConfig = {
+      apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+      authDomain: "vulnerai.firebaseapp.com",
+      projectId: "vulnerai",
+      storageBucket: "vulnerai.firebasestorage.app",
+      messagingSenderId: "576892753213",
+      appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+      measurementId: "G-K38GLCC5XL"
+    };
+    if (!getApps().length) initializeApp(firebaseConfig);
+    const auth = getAuth();
+    if (!auth || !auth.currentUser) return authObj.token;
+    const newToken = await getIdToken(auth.currentUser, true);
+    authObj.token = newToken; authObj.ts = Date.now();
+    localStorage.setItem(AUTH_KEY, JSON.stringify(authObj));
+    return newToken;
+  } catch (e) {
+    console.warn('refreshTokenIfNeeded failed', e);
+    try { const authObj = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); return authObj.token; } catch { return null; }
+  }
 }
 function requireAuth() {
   if (!isLoggedIn()) {
@@ -376,7 +423,16 @@ function createModelFromApiResponse(apiStatus) {
       apiStatus: apiStatus
     };
   }
-
+  const cveList = (apiStatus.foundVulns || []).map(vuln => ({
+    id: vuln.CVE || `VULN-${uid()}`,
+    title: vuln.title || `Vulnerability in ${vuln.service || 'unknown'}`,
+    cvss: parseFloat(vuln.risk_level) || 0.0,
+    severity: cvssToSeverity(parseFloat(vuln.risk_level) || 0.0),
+    port: vuln.port,
+    service: vuln.service,
+    // 🆕 ADD EXTERNAL LINK
+    external_link: `https://nvd.nist.gov/vuln/detail/${vuln.CVE}`
+  }));
   if (apiStatus.scan.status === 'complete' && apiStatus.ScanResults) {
     const hosts = apiStatus.ScanResults;
     console.log('🔍 [DEBUG] Processing ScanResults for model:', hosts);
@@ -551,6 +607,18 @@ function processCompletedScan(scan, apiStatus) {
     scan.cves = scan.cveList.length;
 
     console.log('Scan after processing:', scan);
+  }
+  if (apiStatus.foundVulns && Array.isArray(apiStatus.foundVulns)) {
+    scan.cveList = apiStatus.foundVulns.map(vuln => ({
+      id: vuln.CVE || `VULN-${uid()}`,
+      title: vuln.title || `Vulnerability in ${vuln.service || 'unknown'}`,
+      cvss: parseFloat(vuln.risk_level) || 0.0,
+      severity: cvssToSeverity(parseFloat(vuln.risk_level) || 0.0),
+      port: vuln.port,
+      service: vuln.service,
+      // 🆕 ADD EXTERNAL LINK
+      external_link: `https://nvd.nist.gov/vuln/detail/${vuln.CVE}`
+    }));
   }
 }
 
@@ -1164,6 +1232,12 @@ function updateScanResultsUI(model) {
     }
   }
 
+  // Fetch and render server-side risk analysis and full CVE details when available
+  const scanId = model?.apiStatus?.scan?.id || model?.apiStatus?.scan?.scanId;
+  if (model.status === 'complete' && scanId) {
+    fetchAndRenderAnalysis(scanId).catch(err => console.warn('Failed to fetch analysis:', err));
+  }
+
   // Update clear button
   updateClearButtonLabel();
 }
@@ -1398,6 +1472,9 @@ function fillPortsTable(host) {
       </table>
     </div>
     
+    <!-- PLACEHOLDERS FOR DETAILED SERVER ANALYSIS -->
+    <div id="risk-analysis-details" style="margin-top:18px;"></div>
+    <div id="detailed-cves" style="margin-top:18px;"></div>
     <!-- Mostrar recomendações de segurança se disponíveis -->
     ${host.risk_assessment && host.risk_assessment.findings && host.risk_assessment.findings.length > 0 ? `
       <div class="section" style="margin-top: 20px;">
@@ -1484,6 +1561,7 @@ function renderCVETable(cves) {
           <th>Title</th>
           <th>CVSS</th>
           <th>Severity</th>
+          <th>Details</th>
         </tr>
       </thead>
       <tbody>
@@ -1491,17 +1569,138 @@ function renderCVETable(cves) {
     const sev = (vuln.severity || cvssToSeverity(vuln.cvss || 0)).toUpperCase();
     const sevCls = `sev-${sev}`;
     const score = (vuln.cvss ?? 0).toFixed(1);
+    const cveId = vuln.id || '';
+    // 🆕 CHECK IF IT'S A REAL CVE (CVE-XXXX-XXXX pattern)
+    const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
+    const externalLink = vuln.external_link || (isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null);
+
     return `
             <tr>
-              <td><strong>${vuln.id}</strong></td>
+              <td><strong>${cveId}</strong></td>
               <td>${vuln.title}</td>
               <td>${score}</td>
               <td><span class="${sevCls}">${sev}</span></td>
+              <td>
+                ${externalLink ?
+        `<a href="${externalLink}" target="_blank" rel="noopener noreferrer" class="btn-secondary small" style="padding: 4px 12px; font-size: 0.85em;">
+                    View Details
+                  </a>` :
+        '<span class="muted">N/A</span>'
+      }
+              </td>
             </tr>
           `;
   }).join('')}
       </tbody>
     </table>
+  `;
+}
+
+// Fetch risk analysis and CVE details from server and render into placeholders
+async function fetchAndRenderAnalysis(scanId) {
+  const auth = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+  const token = auth.token;
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  try {
+    // Risk analysis
+    const raResp = await fetch(`${nmapAPI.baseURL}/scan/${scanId}/risk-analysis`, { headers });
+    if (raResp.ok) {
+      const ra = await raResp.json();
+      renderRiskAnalysisDetails(ra);
+    } else {
+      console.warn('Risk analysis endpoint returned', raResp.status);
+    }
+
+    // CVE details
+    const cveResp = await fetch(`${nmapAPI.baseURL}/scan/${scanId}/cves`, { headers });
+    if (cveResp.ok) {
+      const cv = await cveResp.json();
+      renderDetailedCves(cv);
+    } else {
+      console.warn('CVE endpoint returned', cveResp.status);
+    }
+  } catch (e) {
+    console.error('fetchAndRenderAnalysis error', e);
+    throw e;
+  }
+}
+
+function renderRiskAnalysisDetails(ra) {
+  const container = document.getElementById('risk-analysis-details');
+  if (!container) return;
+  const rs = ra.risk_summary || ra.risk_summary || {};
+  const recCount = (ra.recommendations || []).length;
+  container.innerHTML = `
+    <div class="section">
+      <div class="section-header"><h2>AI Risk Summary</h2></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;">
+        <div class="muted">Overall Risk: <strong>${rs.overallRisk || rs.overallRisk || 'UNKNOWN'}</strong></div>
+        <div class="muted">Hosts Analyzed: <strong>${rs.totalHosts ?? rs.total_hosts ?? 0}</strong></div>
+        <div class="muted">Avg Risk Score: <strong>${rs.averageRiskScore ?? rs.averageRiskScore ?? 0}</strong></div>
+        <div class="muted">Total Findings: <strong>${rs.totalFindings ?? rs.totalFindings ?? 0}</strong></div>
+        <div class="muted">Recommendations: <strong>${recCount}</strong></div>
+      </div>
+      ${Array.isArray(ra.recommendations) && ra.recommendations.length > 0 ? `
+        <div style="margin-top:12px;">
+          <h3>Top Recommendations</h3>
+          <ul style="margin-left:18px;">${ra.recommendations.slice(0, 6).map(r => `<li>${r.host ? r.host + ': ' : ''}${r.issue || r.action || r.description || JSON.stringify(r)}</li>`).join('')}</ul>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderDetailedCves(cv) {
+  const container = document.getElementById('detailed-cves');
+  if (!container) return;
+  if (!cv || !Array.isArray(cv.all_cves) || cv.all_cves.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="section">
+      <div class="section-header"><h2>All CVEs (${cv.total_cves})</h2></div>
+      <table class="vuln-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th>CVE</th>
+            <th>Host</th>
+            <th>CVSS</th>
+            <th>Published</th>
+            <th>Exploit</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cv.all_cves.map(c => {
+            const cveId = c.cve_id || c.CVE || c.cve || '';
+            const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
+            const externalLink = isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null;
+            
+            return `
+              <tr>
+                <td><strong>${cveId}</strong></td>
+                <td>${c.host || c.hostname || ''}</td>
+                <td>${(c.CVSS?.score ?? c.CVSS?.score ?? c.CVSS?.score) || (c.CVSS?.score===0?0:'-')}</td>
+                <td>${c.publishedDate || c.publishedDate || (c.published ? c.published : '') || ''}</td>
+                <td>${c.exploit_available ? 'Yes' : (c.exploit || '-')}</td>
+                <td>
+                  ${externalLink ? 
+                    `<a href="${externalLink}" target="_blank" rel="noopener noreferrer" class="btn-secondary small" style="padding: 4px 12px; font-size: 0.85em;">
+                      View Details
+                    </a>` : 
+                    '<span class="muted">N/A</span>'
+                  }
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -1580,9 +1779,13 @@ function exportScanToCSV(scanId) {
   if (!scan) return;
 
   let csvContent = 'data:text/csv;charset=utf-8,';
-  csvContent += 'CVE ID,Title,CVSS Score,Severity\n';
+  csvContent += 'CVE ID,Title,CVSS Score,Severity,External Link\n';
   scan.cveList.forEach(cve => {
-    csvContent += `${cve.id},${cve.title},${cve.cvss},${cve.severity}\n`;
+    const cveId = cve.id || '';
+    const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
+    const externalLink = cve.external_link || (isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : 'N/A');
+    
+    csvContent += `${cve.id},${cve.title},${cve.cvss},${cve.severity},"${externalLink}"\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
@@ -1593,7 +1796,6 @@ function exportScanToCSV(scanId) {
   link.click();
   document.body.removeChild(link);
 }
-
 /* ====== INIT ====== */
 async function init() {
   if (!requireAuth()) return;
@@ -1660,8 +1862,34 @@ async function init() {
     closeUserMenu();
     if (action === "settings") { window.location.href = "settings.html"; }
     if (action === "logout") {
-      localStorage.removeItem(AUTH_KEY);
-      window.location.href = "login.html";
+      (async () => {
+        try {
+          const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+          const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+          const { initializeApp, getApps } = appMod;
+          const { getAuth, signOut } = authMod;
+          const firebaseConfig = {
+            apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+            authDomain: "vulnerai.firebaseapp.com",
+            projectId: "vulnerai",
+            storageBucket: "vulnerai.firebasestorage.app",
+            messagingSenderId: "576892753213",
+            appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+            measurementId: "G-K38GLCC5XL"
+          };
+          if (!getApps().length) initializeApp(firebaseConfig);
+          await signOut(getAuth());
+        } catch (e) { console.debug('Firebase signOut skipped or failed', e); }
+
+        try {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (key.startsWith('vulnerai') || key === AUTH_KEY) localStorage.removeItem(key);
+          }
+        } catch (e) { localStorage.removeItem(AUTH_KEY); }
+        window.location.href = "login.html";
+      })();
     }
   });
 

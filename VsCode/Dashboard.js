@@ -8,9 +8,14 @@ class NmapScanAPI {
 
   async _makeRequest(endpoint, options = {}) {
     try {
+      // try refresh first (if applicable)
+      await refreshTokenIfNeeded();
+      const auth = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+      const token = auth.token;
       const config = {
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...options.headers,
         },
         ...options
@@ -23,7 +28,15 @@ class NmapScanAPI {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let details = '';
+        try {
+          const txt = await response.text();
+          try { details = JSON.stringify(JSON.parse(txt)); } catch { details = txt; }
+        } catch (e) { details = 'Could not read response body'; }
+        const err = new Error(`HTTP error! status: ${response.status} - ${details}`);
+        err.status = response.status;
+        err.body = details;
+        throw err;
       }
 
       return await response.json();
@@ -75,6 +88,40 @@ const AUTH_KEY = 'vulnerai.auth';
 function isLoggedIn() {
   try { return !!JSON.parse(localStorage.getItem(AUTH_KEY)); }
   catch { return false; }
+}
+
+// Refresh Firebase ID token if older than 50 minutes
+async function refreshTokenIfNeeded() {
+  try {
+    const authObj = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+    if (!authObj || !authObj.token || !authObj.ts) return authObj.token;
+    const ageMs = Date.now() - (authObj.ts || 0);
+    if (ageMs < 50 * 60 * 1000) return authObj.token; // still fresh enough
+
+    const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+    const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+    const { initializeApp, getApps } = appMod;
+    const { getAuth, getIdToken } = authMod;
+    const firebaseConfig = {
+      apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+      authDomain: "vulnerai.firebaseapp.com",
+      projectId: "vulnerai",
+      storageBucket: "vulnerai.firebasestorage.app",
+      messagingSenderId: "576892753213",
+      appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+      measurementId: "G-K38GLCC5XL"
+    };
+    if (!getApps().length) initializeApp(firebaseConfig);
+    const auth = getAuth();
+    if (!auth || !auth.currentUser) return authObj.token;
+    const newToken = await getIdToken(auth.currentUser, true);
+    authObj.token = newToken; authObj.ts = Date.now();
+    localStorage.setItem(AUTH_KEY, JSON.stringify(authObj));
+    return newToken;
+  } catch (e) {
+    console.warn('refreshTokenIfNeeded failed', e);
+    try { const authObj = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); return authObj.token; } catch { return null; }
+  }
 }
 function requireAuth() {
   if (!isLoggedIn()) {
@@ -842,8 +889,38 @@ function init() {
     closeUserMenu();
     if (action === "settings") { window.location.href = "settings.html"; }
     if (action === "logout") {
-      localStorage.removeItem(AUTH_KEY);   // limpa sessão
-      window.location.href = "login.html"; // volta ao login
+      (async () => {
+        // Attempt to sign out from Firebase if available, ignore errors
+        try {
+          const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+          const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+          const { initializeApp, getApps } = appMod;
+          const { getAuth, signOut } = authMod;
+          const firebaseConfig = {
+            apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+            authDomain: "vulnerai.firebaseapp.com",
+            projectId: "vulnerai",
+            storageBucket: "vulnerai.firebasestorage.app",
+            messagingSenderId: "576892753213",
+            appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+            measurementId: "G-K38GLCC5XL"
+          };
+          if (!getApps().length) initializeApp(firebaseConfig);
+          await signOut(getAuth());
+        } catch (e) {
+          console.debug('Firebase signOut skipped or failed', e);
+        }
+
+        // Clear app data from localStorage
+        try {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (key.startsWith('vulnerai') || key === AUTH_KEY) localStorage.removeItem(key);
+          }
+        } catch (e) { localStorage.removeItem(AUTH_KEY); }
+        window.location.href = "login.html";
+      })();
     }
   });
 

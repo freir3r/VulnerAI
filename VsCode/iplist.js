@@ -402,8 +402,34 @@
           closeUserMenu();
           if (action === "settings") { window.location.href = "settings.html"; }
           if (action === "logout") {
-            localStorage.removeItem(AUTH_KEY);
-            window.location.href = "login.html";
+            (async () => {
+              try {
+                const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+                const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+                const { initializeApp, getApps } = appMod;
+                const { getAuth, signOut } = authMod;
+                const firebaseConfig = {
+                  apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+                  authDomain: "vulnerai.firebaseapp.com",
+                  projectId: "vulnerai",
+                  storageBucket: "vulnerai.firebasestorage.app",
+                  messagingSenderId: "576892753213",
+                  appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+                  measurementId: "G-K38GLCC5XL"
+                };
+                if (!getApps().length) initializeApp(firebaseConfig);
+                await signOut(getAuth());
+              } catch (e) { console.debug('Firebase signOut skipped or failed', e); }
+
+              try {
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                  const key = localStorage.key(i);
+                  if (!key) continue;
+                  if (key.startsWith('vulnerai') || key === AUTH_KEY) localStorage.removeItem(key);
+                }
+              } catch (e) { localStorage.removeItem(AUTH_KEY); }
+              window.location.href = "login.html";
+            })();
           }
         });
       }

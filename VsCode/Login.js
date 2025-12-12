@@ -5,6 +5,7 @@ import {
     getAuth, 
     signInWithEmailAndPassword, 
     sendPasswordResetEmail 
+    , getIdToken
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
   const firebaseConfig = {
@@ -63,9 +64,10 @@ form.addEventListener('submit', async (e) => {
         const user = userCredential.user;
 
         // Login bem-sucedido!
-        // Guarda o estado de login (opcional)
-        localStorage.setItem(AUTH_KEY, JSON.stringify({ uid: user.uid, email: user.email, ts: Date.now() }));
-        
+        // Obtém o Firebase ID token e guarda o estado de login com token
+        const idToken = await getIdToken(user);
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ uid: user.uid, email: user.email, token: idToken, ts: Date.now() }));
+
         // **REDIRECIONA APENAS AQUI**
         window.location.href = 'index.html';
 
