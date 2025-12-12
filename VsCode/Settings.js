@@ -1,151 +1,178 @@
-// ==== LocalStorage keys ====
+// ==== Chaves do LocalStorage ====
+const K_USER = "vulnerai.user";   // Perfil (Nome, Email, Org)
+const K_PREFS = "vulnerai.prefs";  // Configurações (Tema, Sidebar, Scan Defaults)
 const K_TARGETS = "vulnerai.targets";
-const K_SCANS   = "vulnerai.scans";
-const K_PREFS   = "vulnerai.prefs"; // todas as prefs guardadas aqui
+const K_SCANS = "vulnerai.scans";
 
-// ==== helpers ====
-const $ = (s, el=document)=> el.querySelector(s);
+// ==== Helpers ====
+const $ = (s) => document.querySelector(s);
 
-function loadJSON(key, fallback){
-  try{ return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
-  catch{ return fallback; }
-}
-function saveJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
-
-function applyTheme(isDark){
-  document.body.classList.toggle('dark', !!isDark);
+function loadJSON(key, fallback) {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : fallback;
+  } catch (e) {
+    return fallback;
+  }
 }
 
-// ==== carregar prefs na UI ====
-function hydrate(){
+function saveJSON(key, val) {
+  localStorage.setItem(key, JSON.stringify(val));
+}
+
+function applyTheme(isDark) {
+  if (isDark) {
+    document.body.classList.add('dark');
+  } else {
+    document.body.classList.remove('dark');
+  }
+}
+
+// ==== 1. Carregar Dados na UI (Hydrate) ====
+function hydrate() {
+  // A. Carregar Perfil do Utilizador
+  const user = loadJSON(K_USER, {
+    displayName: "",
+    email: "",
+    organization: ""
+  });
+
+  if ($("#set-name")) $("#set-name").value = user.displayName || "";
+  if ($("#set-email")) $("#set-email").value = user.email || "";
+  if ($("#set-org")) $("#set-org").value = user.organization || "";
+
+  // B. Carregar Preferências da App
   const prefs = loadJSON(K_PREFS, {
-    name:"", email:"", org:"",
-    themeDarkHeader:true,          // representa “Dark Mode”
-    sidebarCollapsedDefault:false,
-    scanType:"quick",
-    scanProto:"TCP",
-    autoAcceptTos:false,
-    telemetry:false
+    theme: "light", // 'dark' ou 'light'
+    sidebarCollapsed: false,
+    defaultScanType: "quick",
+    defaultProtocol: "TCP",
+    autoAcceptTos: false,
+    telemetry: false
   });
 
-  $("#set-name").value  = prefs.name || "";
-  $("#set-email").value = prefs.email || "";
-  $("#set-org").value   = prefs.org || "";
+  // Tema
+  const isDark = prefs.theme === 'dark';
+  if ($("#set-theme")) {
+    $("#set-theme").checked = isDark;
+    // Listener para preview imediato
+    $("#set-theme").addEventListener("change", (e) => applyTheme(e.target.checked));
+  }
+  applyTheme(isDark);
 
-  // Dark mode
-  $("#set-theme").checked = !!prefs.themeDarkHeader;
-  applyTheme(!!prefs.themeDarkHeader);
+  // Sidebar
+  if ($("#set-sidebar-collapsed")) $("#set-sidebar-collapsed").checked = !!prefs.sidebarCollapsed;
 
-  $("#set-sidebar-collapsed").checked = !!prefs.sidebarCollapsedDefault;
+  // Defaults de Scan
+  if ($("#set-scan-type")) $("#set-scan-type").value = prefs.defaultScanType || "quick";
+  if ($("#set-scan-proto")) $("#set-scan-proto").value = prefs.defaultProtocol || "TCP";
+  if ($("#set-auto-accept-tos")) $("#set-auto-accept-tos").checked = !!prefs.autoAcceptTos;
 
-  $("#set-scan-type").value  = prefs.scanType || "quick";
-  $("#set-scan-proto").value = prefs.scanProto || "TCP";
-  $("#set-auto-accept-tos").checked = !!prefs.autoAcceptTos;
-
-  $("#set-telemetry").checked = !!prefs.telemetry;
-
-  // Ligar/desligar dark em tempo real no settings
-  $("#set-theme").addEventListener("change", (e)=>{
-    applyTheme(e.target.checked);
-  });
+  // Privacidade
+  if ($("#set-telemetry")) $("#set-telemetry").checked = !!prefs.telemetry;
 }
 
-// ==== recolher e guardar prefs ====
-function collectPrefs(){
-  return {
-    name: $("#set-name").value.trim(),
+// ==== 2. Recolher e Guardar Dados ====
+function save() {
+  // A. Guardar Perfil
+  const user = {
+    displayName: $("#set-name").value.trim(),
     email: $("#set-email").value.trim(),
-    org: $("#set-org").value,
+    organization: $("#set-org").value
+  };
+  saveJSON(K_USER, user);
 
-    themeDarkHeader: $("#set-theme").checked,  // ← dark mode
-    sidebarCollapsedDefault: $("#set-sidebar-collapsed").checked,
-
-    scanType: $("#set-scan-type").value,
-    scanProto: $("#set-scan-proto").value,
+  // B. Guardar Preferências
+  const isDark = $("#set-theme").checked;
+  const prefs = {
+    theme: isDark ? 'dark' : 'light',
+    sidebarCollapsed: $("#set-sidebar-collapsed").checked,
+    defaultScanType: $("#set-scan-type").value,
+    defaultProtocol: $("#set-scan-proto").value,
     autoAcceptTos: $("#set-auto-accept-tos").checked,
-
     telemetry: $("#set-telemetry").checked
   };
-}
-
-function save(){
-  const prefs = collectPrefs();
-
-  // guarda prefs completas
   saveJSON(K_PREFS, prefs);
 
-  // atalho de tema (facilita leitura no Dashboard e dispara storage event)
-  localStorage.setItem("vulnerai.theme", prefs.themeDarkHeader ? "dark" : "light");
+  // Feedback Visual (Melhor que alert)
+  const btn = $("#btn-save");
+  const originalText = btn.innerText;
+  btn.innerText = "Saved!";
+  btn.style.backgroundColor = "#10b981"; // Verde sucesso
 
-  // aplica colapso por defeito (mesma flag que o dashboard usa)
-  localStorage.setItem("vulnerai.sidebarCollapsed", prefs.sidebarCollapsedDefault ? "1" : "0");
+  setTimeout(() => {
+    btn.innerText = originalText;
+    btn.style.backgroundColor = "";
+    // Opcional: Redirecionar após salvar
+    // location.href = "index.html"; 
+  }, 1000);
 
-  alert("Settings saved.");
-  // voltar ao dashboard
-  location.href = "dashboard.html";
+  console.log("Settings saved successfully.");
 }
 
-// ==== export/import/clear ====
-function exportData(){
+// ==== 3. Exportar/Importar/Limpar ====
+function exportData() {
   const data = {
+    user: loadJSON(K_USER, {}),
     prefs: loadJSON(K_PREFS, {}),
     targets: loadJSON(K_TARGETS, []),
     scans: loadJSON(K_SCANS, []),
     exportedAt: new Date().toISOString()
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vulnerai-export.json";
+  a.download = `vulnerai-backup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function importData(file){
+function importData(file) {
   const reader = new FileReader();
   reader.onload = () => {
-    try{
+    try {
       const obj = JSON.parse(reader.result);
-      if(obj.targets) saveJSON(K_TARGETS, obj.targets);
-      if(obj.scans)   saveJSON(K_SCANS, obj.scans);
-      if(obj.prefs)   saveJSON(K_PREFS, obj.prefs);
+      if (obj.user) saveJSON(K_USER, obj.user);
+      if (obj.prefs) saveJSON(K_PREFS, obj.prefs);
+      if (obj.targets) saveJSON(K_TARGETS, obj.targets);
+      if (obj.scans) saveJSON(K_SCANS, obj.scans);
 
-      // sincroniza atalho de tema se vier do ficheiro
-      if(obj?.prefs?.themeDarkHeader !== undefined){
-        localStorage.setItem("vulnerai.theme", obj.prefs.themeDarkHeader ? "dark" : "light");
-        applyTheme(!!obj.prefs.themeDarkHeader);
-      }
-
-      alert("Import completed.");
-      hydrate();
-    }catch(e){
-      alert("Invalid JSON.");
+      alert("Import completed successfully.");
+      hydrate(); // Recarregar ecrã
+    } catch (e) {
+      alert("Error: Invalid JSON file.");
     }
   };
   reader.readAsText(file);
 }
 
-function clearData(){
-  if(!confirm("Clear local targets, scans and preferences?")) return;
+function clearData() {
+  if (!confirm("⚠️ Are you sure? This will delete all your local targets, scan history, and settings.")) return;
+
+  localStorage.removeItem(K_USER);
+  localStorage.removeItem(K_PREFS);
   localStorage.removeItem(K_TARGETS);
   localStorage.removeItem(K_SCANS);
-  localStorage.removeItem(K_PREFS);
-  localStorage.removeItem("vulnerai.theme");
-  alert("Local data cleared.");
-  hydrate();
+
+  alert("All local data cleared.");
+  hydrate(); // Limpa os campos no ecrã
 }
 
-// ==== boot ====
-document.addEventListener("DOMContentLoaded", ()=>{
+// ==== 4. Inicialização ====
+document.addEventListener("DOMContentLoaded", () => {
   hydrate();
 
-  $("#btn-save")  .addEventListener("click", save);
-  $("#btn-export").addEventListener("click", exportData);
-  $("#btn-clear") .addEventListener("click", clearData);
-  $("#file-import").addEventListener("change", (e)=>{
-    const f = e.target.files?.[0];
-    if(f) importData(f);
-    e.target.value = "";
-  });
+  // Event Listeners
+  if ($("#btn-save")) $("#btn-save").addEventListener("click", save);
+  if ($("#btn-export")) $("#btn-export").addEventListener("click", exportData);
+  if ($("#btn-clear")) $("#btn-clear").addEventListener("click", clearData);
+
+  if ($("#file-import")) {
+    $("#file-import").addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      if (f) importData(f);
+      e.target.value = ""; // Reset para permitir importar o mesmo ficheiro de novo
+    });
+  }
 });
