@@ -1,7 +1,8 @@
 // Main API server for Nmap scan management (adapted for new Firestore model)
 
 const express = require('express');
-const bodyParser = require('body-parser');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -12,7 +13,6 @@ const admin = require('firebase-admin');
 const xml2js = require('xml2js');
 const cors = require('cors');
 const socketIo = require('socket.io');
-
 const PORT = process.env.PORT || 3000;
 
 // --- Firebase Initialization ---
@@ -22,7 +22,8 @@ try {
 } catch (e) {
   console.error("❌ ERRO CRÍTICO: O ficheiro './keys/firebase-sa.json' não foi encontrado!");
   console.error("Certifica-te que o ficheiro está na pasta API/keys/ antes de iniciar o Docker.");
-  process.exit(1);
+  // Throw error so the process fails fast without using process.exit()
+  throw new Error("Missing firebase-sa.json service account file. Place it in API/keys/ or set GOOGLE_APPLICATION_CREDENTIALS.");
 }
 
 try {
@@ -1968,32 +1969,80 @@ const server = http.createServer(app);
 const io = socketIo(server);
 io.sockets.setMaxListeners(40);
 require('events').EventEmitter.defaultMaxListeners = 40;
-app.use(cors());
-app.use(express.json());
+// Security middlewares
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',').map(s => s.trim());
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    return callback(new Error('CORS policy: Origin not allowed'));
+  }
+}));
 
-// List available scan presets
-app.get('/presets', (req, res) => {
-  const presetsInfo = {
-    quick_scan: {
-      name: 'quick_scan',
-      description: 'Ultra-fast network discovery - finds IPs, MAC addresses, hostnames, and device types in under 1 minute',
-      timeout: '1 minute',
-      best_for: 'Quick network inventory and device discovery',
-      example_targets: ['192.168.1.0/24', '10.208.192.0/24', '10.0.0.1-100'],
-      finds: ['IP addresses', 'MAC addresses', 'Hostnames', 'Device types', 'Network topology']
-    },
-    deep_scan: {
-      name: 'deep_scan',
-      description: 'Comprehensive single target scan with service detection, OS detection, and security scripts',
-      timeout: '15 minutes',
-      best_for: 'Detailed analysis of individual systems',
-      example_targets: ['192.168.1.100', 'example.com', '10.208.195.132'],
-      finds: ['Open ports', 'Service versions', 'Operating system', 'Security vulnerabilities', 'Service banners']
-    }
-  };
+app.use(helmet());
 
-  res.json({ presets: presetsInfo });
+// Basic rate limiter to protect endpoints from abuse
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),
+  standardHeaders: true,
+  legacyHeaders: false
 });
+app.use(apiLimiter);
+
+// Limit JSON body size
+app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
+
+// Simple redact helper for logs
+function redactBearer(str) {
+  if (!str || typeof str !== 'string') return str;
+  return str.replace(/Bearer\s+[A-Za-z0-9\-_.=]+/g, 'Bearer [REDACTED]');
+}
+// exported for tests or external logging wrapper
+exports.redactBearer = redactBearer;
+
+// Firebase ID token verification middleware
+// Public paths that should remain accessible without auth
+const PUBLIC_PATHS = new Set(['/health', '/presets']);
+
+// Async wrapper for routes to surface errors to Express error handler
+function asyncHandler(fn) {
+  return function (req, res, next) {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+exports.asyncHandler = asyncHandler;
+
+async function verifyFirebaseIdToken(req, res, next) {
+  // allow public paths
+  if (PUBLIC_PATHS.has(req.path)) return next();
+
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Missing Authorization header' });
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Invalid Authorization header format' });
+  const idToken = parts[1];
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    // attach Firebase uid and claims
+    req.user = { uid: decoded.uid, email: decoded.email, claims: decoded };
+    return next();
+  } catch (err) {
+    // Provide clearer error payloads for token expiration and other auth errors
+    const code = err && err.code ? err.code : (err && err.message ? err.message : 'auth/unknown-error');
+    console.error('Firebase token verification failed:', code);
+    if (String(code).includes('id-token-expired') || String(code).includes('auth/id-token-expired')) {
+      return res.status(401).json({ error: 'ID token expired', code: 'TOKEN_EXPIRED' });
+    }
+    return res.status(401).json({ error: 'Invalid Firebase ID token', code: 'TOKEN_INVALID' });
+  }
+}
+
+// Protect all routes after this middleware
+app.use(verifyFirebaseIdToken);
+
+
 
 // Main scan endpoint
 app.post('/scan', async (req, res) => {
@@ -3172,6 +3221,27 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
     console.error('Error getting risk analysis:', err);
     res.status(500).json({ error: 'Failed to get risk analysis', details: err.message });
   }
+});
+
+// Global error handler (centralized)
+app.use((err, req, res, next) => {
+  try {
+    console.error('Unhandled error:', err && (err.stack || err));
+  } catch (e) {
+    console.error('Error while logging an error:', e);
+  }
+  if (res.headersSent) return next(err);
+  res.status(err && err.status ? err.status : 500).json({ error: (err && err.message) ? err.message : 'Internal Server Error' });
+});
+
+// Process-level handlers for crashes and promise rejections
+process.on('unhandledRejection', (reason, p) => {
+  console.error('Unhandled Rejection at Promise', p, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Log and allow supervisor (PM2/systemd) to handle restarts. Avoid calling process.exit() directly.
+  // If you prefer to exit on uncaught exceptions, replace this with `process.exit(1)` behind an environment flag.
 });
 
 server.listen(PORT, () => console.log(`Enhanced Nmap-Firebase API with AI Risk Assessment and CVE Detection listening on ${PORT}`));
