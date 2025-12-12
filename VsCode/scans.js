@@ -230,7 +230,7 @@ async function loadScans() {
         type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
         preset: scan.preset_used || scan.scan_type,
         proto: 'TCP', // Default, can be adjusted if API provides this info
-        startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : Date.now(),
+        startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : 'missing timestamp',
         status: scan.status === 'complete' ? 'Completed' :
           scan.status === 'ongoing' ? 'ongoing' : 'failed',
         apiStatus: scan,
