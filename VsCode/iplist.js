@@ -1,7 +1,7 @@
 /* iplist.js — Firebase Integrated Version
-   - Mantém o teu UI (Popup, Filtros, CSV, Tags)
-   - Substitui LocalStorage por Firestore
-   - Garante isolamento por User ID
+   - Uses LocalStorage for quick UI Auth Check (Your requirement)
+   - Uses Firebase SDK Auth for Database Security
+   - Persists data to Firestore "Targets" collection
 */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-// --- TUA CONFIGURAÇÃO FIREBASE ---
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
     authDomain: "vulnerai.firebaseapp.com",
@@ -29,29 +29,59 @@ const auth = getAuth(app);
 (function(){
   'use strict';
 
-  /* ====== STATE ====== */
-  const state = { 
-      targets: [],
-      currentUser: null
-  };
+  /* ====== AUTH (Mantido como pediste + Helper para DB) ====== */
+  const AUTH_KEY = 'vulnerai.auth';
 
-  // Tags agora são calculadas dinamicamente baseadas nos dados da BD
-  let allTags = new Set();
+  // 1. A tua verificação original via LocalStorage (Rápida para UI)
+  function isLoggedIn() {
+    try { return !!JSON.parse(localStorage.getItem(AUTH_KEY)); }
+    catch { return false; }
+  }
+
+  function requireAuth() {
+    if (!isLoggedIn()) {
+      console.warn('requireAuth: not logged in — redirecting to login.html');
+      try { window.location.replace('login.html'); } catch(e) {}
+      return false;
+    }
+    return true;
+  }
+
+  // 2. Helper para garantir que temos o UID seguro para falar com a Base de Dados
+  async function ensureFirebaseUser() {
+      if (auth.currentUser) return auth.currentUser;
+      return new Promise((resolve, reject) => {
+          const unsubscribe = onAuthStateChanged(auth, (user) => {
+              unsubscribe();
+              if (user) resolve(user);
+              else {
+                  // Se falhar aqui, o token local pode ser inválido
+                  window.location.replace('login.html');
+                  reject('No Firebase User');
+              }
+          });
+      });
+  }
+
+  /* ====== STATE ====== */
+  const state = { targets: [] };
+  let allTags = new Set(); // Usamos Set para evitar duplicados
 
   /* ====== HELPERS ====== */
   const qs = (s, el = document) => el.querySelector(s);
   const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
-  // UID agora é gerado pelo Firestore, mas mantemos a função para casos de fallback
-  const uid = () => Math.random().toString(36).slice(2, 9); 
+  const uid = () => Math.random().toString(36).slice(2, 9); // Fallback para UI
 
   /* ====== FIRESTORE ACTIONS (Substitui LocalStorage) ====== */
-  
-  // 1. CARREGAR (READ) - Filtra pelo ID do utilizador logado
-  async function loadTargets() {
-    if (!state.currentUser) return;
 
+  // 1. LOAD TARGETS
+  async function loadTargets() {
+    if (!requireAuth()) return; // A tua verificação
+    
     try {
-        const q = query(collection(db, "Targets"), where("user_id", "==", state.currentUser.uid));
+        const user = await ensureFirebaseUser(); // Espera pelo Auth do Firebase
+        
+        const q = query(collection(db, "Targets"), where("user_id", "==", user.uid));
         const querySnapshot = await getDocs(q);
         
         state.targets = [];
@@ -59,14 +89,13 @@ const auth = getAuth(app);
 
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
-            // Mapeamos os campos da BD (snake_case) para o teu UI (camelCase)
+            // Converter Snake_case (BD) para CamelCase (UI)
             const target = {
-                id: docSnap.id, // ID real do documento Firestore
+                id: docSnap.id, 
                 name: data.name,
                 value: data.value,
                 kind: data.kind || (data.value.includes('/') ? 'network' : 'host'),
                 addedAt: data.added_at || Date.now(),
-                user_id: data.user_id,
                 tags: data.tags || [],
                 scans: data.scans || 0,
                 cves: data.cves || 0,
@@ -74,7 +103,6 @@ const auth = getAuth(app);
             };
             state.targets.push(target);
             
-            // Atualizar lista de tags disponíveis
             if (target.tags && Array.isArray(target.tags)) {
                 target.tags.forEach(t => allTags.add(t));
             }
@@ -82,62 +110,66 @@ const auth = getAuth(app);
 
         renderTargets();
         renderTagsFilter();
-    } catch (error) {
-        console.error("Erro ao carregar targets da Firebase:", error);
+    } catch (e) {
+        console.error("Erro ao carregar targets:", e);
     }
   }
 
-  // 2. SALVAR/CRIAR (CREATE)
+  // 2. ADD TARGET (Guardar na Firebase)
   async function addTargetToFirestore(targetData) {
-      if (!state.currentUser) return false;
+      if (!requireAuth()) return;
+      const user = await ensureFirebaseUser();
+
       try {
-          // Guardamos com os campos que a tua BD espera (ver imagem que mandaste)
           await addDoc(collection(db, "Targets"), {
               name: targetData.name,
               value: targetData.value,
               kind: targetData.kind,
-              user_id: state.currentUser.uid,
+              user_id: user.uid, // Associa ao User
               added_at: Date.now(),
               tags: targetData.tags || [],
               scans: 0, 
               cves: 0, 
               last_scan: "-"
           });
-          await loadTargets(); // Recarregar lista
+          await loadTargets(); // Atualiza a lista
           return true;
       } catch (e) {
-          console.error("Erro ao salvar no Firestore:", e);
+          console.error("Erro ao salvar:", e);
           alert("Erro ao conectar com a base de dados.");
           return false;
       }
   }
 
-  // 3. EDITAR (UPDATE)
+  // 3. UPDATE TARGET
   async function updateTargetInFirestore(id, updatedData) {
+      if (!requireAuth()) return;
+      await ensureFirebaseUser();
+
       try {
           const targetRef = doc(db, "Targets", id);
           await updateDoc(targetRef, updatedData);
           await loadTargets();
-      } catch (e) {
-          console.error("Erro ao atualizar:", e);
-      }
+      } catch (e) { console.error("Erro ao atualizar:", e); }
   }
 
-  // 4. APAGAR (DELETE)
+  // 4. DELETE TARGET
   async function deleteTargetFromFirestore(id) {
+      if (!requireAuth()) return;
+      await ensureFirebaseUser();
+
       if (!confirm("Delete this target?")) return;
       try {
           await deleteDoc(doc(db, "Targets", id));
-          // Atualiza UI localmente instantaneamente
           state.targets = state.targets.filter(t => t.id !== id);
           renderTargets();
-      } catch (e) {
-          console.error("Erro ao apagar:", e);
-      }
+      } catch (e) { console.error("Erro ao apagar:", e); }
   }
 
-  // 5. APAGAR MÚLTIPLOS (BATCH DELETE)
+  // 5. BATCH DELETE
   async function batchDeleteFirestore(ids) {
+      if (!requireAuth()) return;
+      await ensureFirebaseUser();
       if (!ids.length) return;
       if (!confirm(`Delete ${ids.length} selected target(s)?`)) return;
 
@@ -150,18 +182,17 @@ const auth = getAuth(app);
       try {
           await batch.commit();
           await loadTargets();
-          // Reset checkall
           const allChk = document.getElementById("tgt-checkall");
           if (allChk) allChk.checked = false;
-      } catch (e) {
-          console.error("Erro no batch delete:", e);
-      }
+      } catch (e) { console.error("Batch delete error:", e); }
   }
 
   // 6. TAGS UPDATE
   async function updateTagsFirestore(ids, newTags) {
+      if (!requireAuth()) return;
+      await ensureFirebaseUser();
+
       const batch = writeBatch(db);
-      
       ids.forEach(id => {
           const t = state.targets.find(x => x.id === id);
           if (!t) return;
@@ -173,9 +204,7 @@ const auth = getAuth(app);
       try {
           await batch.commit();
           await loadTargets();
-      } catch (e) {
-          console.error("Erro ao atualizar tags:", e);
-      }
+      } catch (e) { console.error("Tags update error:", e); }
   }
 
   /* ====== VALIDATION ====== */
@@ -186,7 +215,6 @@ const auth = getAuth(app);
   function isValidHostOrIPorCIDR(s) {
     if (!s) return false;
     const v = s.trim();
-    // Adicionei localhost para testes
     if (v === 'localhost') return true;
     return reIPv4.test(v) || reCIDR.test(v) || reHost.test(v);
   }
@@ -195,7 +223,7 @@ const auth = getAuth(app);
     return String(s || '').replace(/[&<>\"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
   }
 
-  /* ====== UI RENDER (IGUAL AO TEU) ====== */
+  /* ====== UI RENDER ====== */
   function getRiskColor(cves) {
     if (cves >= 10) return "chip-red";
     if (cves >= 5) return "chip-orange";
@@ -206,7 +234,6 @@ const auth = getAuth(app);
   function renderTagsFilter() {
     const container = document.getElementById("tags-filter");
     if (!container) return;
-    // Converter Set para Array e ordenar
     const sortedTags = Array.from(allTags).sort();
     const options = ['<option value="">All tags</option>'].concat(
       sortedTags.map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`)
@@ -243,7 +270,6 @@ const auth = getAuth(app);
       wrap.innerHTML = "";
       list.forEach(t => {
         const riskClass = getRiskColor(t.cves || 0);
-        // Formatação de data segura
         const dateObj = new Date(t.addedAt);
         const addedStr = !isNaN(dateObj) ? dateObj.toISOString().slice(0,10) : '-';
         const lastScanStr = t.lastScan && t.lastScan !== '-' ? new Date(t.lastScan).toISOString().slice(0,10) : '-';
@@ -315,25 +341,24 @@ const auth = getAuth(app);
     } catch(e){ console.error(e); }
   }
 
-  /* ====== CSV IMPORT (Modificado para Firestore Batch) ====== */
+  /* ====== CSV IMPORT (Firestore) ====== */
   function handleCSVImport(file) {
+    if (!requireAuth()) return;
+
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
+        const user = await ensureFirebaseUser();
         const text = e.target.result;
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (!lines.length) { alert("CSV vazio."); return; }
 
         const headerCols = lines[0].split(',').map(s=>s.trim().toLowerCase());
-        const hasHeader = headerCols.includes('name') && headerCols.includes('value');
-        const start = hasHeader ? 1 : 0;
+        const start = (headerCols.includes('name') && headerCols.includes('value')) ? 1 : 0;
 
-        // Validar e preparar batch
         const batch = writeBatch(db);
         let count = 0;
         const skipped = [];
-
-        // Check duplicados localmente primeiro para evitar chamadas
         const existingValues = new Set(state.targets.map(t => (t.value || '').toLowerCase()));
 
         for (let i = start; i < lines.length; i++) {
@@ -342,18 +367,17 @@ const auth = getAuth(app);
           const value = cols[1] || '';
           const tagsRaw = cols[2] || '';
 
-          if (!value) { skipped.push({line: i+1, reason: 'empty value'}); continue; }
-          if (!isValidHostOrIPorCIDR(value)) { skipped.push({line: i+1, reason: 'invalid host/ip/cidr'}); continue; }
+          if (!value) { skipped.push({line: i+1, reason: 'empty'}); continue; }
+          if (!isValidHostOrIPorCIDR(value)) { skipped.push({line: i+1, reason: 'invalid IP'}); continue; }
           if (existingValues.has(value.toLowerCase())) { skipped.push({line: i+1, reason: 'duplicate'}); continue; }
 
           const kind = value.includes('/') ? 'network' : 'host';
           const tags = tagsRaw ? tagsRaw.split(/[;,]+/).map(t => t.trim()).filter(Boolean) : [];
 
-          // Criar referência para novo doc
           const newRef = doc(collection(db, "Targets"));
           batch.set(newRef, {
               name, value, kind,
-              user_id: state.currentUser.uid,
+              user_id: user.uid,
               added_at: Date.now(),
               tags, scans: 0, cves: 0, last_scan: "-"
           });
@@ -363,8 +387,7 @@ const auth = getAuth(app);
         }
 
         if (count === 0) {
-          const msg = skipped.length ? `Nenhum target importado. Erros: ${skipped.map(s=>`(L${s.line}: ${s.reason})`).join(', ')}` : 'Nenhum dado válido.';
-          alert(msg);
+          alert(`Nenhum target importado. ${skipped.length} ignorados.`);
           return;
         }
 
@@ -379,7 +402,7 @@ const auth = getAuth(app);
     reader.readAsText(file);
   }
 
-  /* ====== EDIT TARGET (Modificado para usar ID) ====== */
+  /* ====== MODALS & EVENT LISTENERS ====== */
   function openEditModal(target) {
     try {
       const modal = document.getElementById("iplist-modal");
@@ -396,7 +419,6 @@ const auth = getAuth(app);
       kindInput.value = target.kind || 'host';
       valueInput.value = target.value || '';
       
-      // Guardar ID e modo no dataset do form
       form.dataset.mode = "edit";
       form.dataset.targetId = target.id;
 
@@ -404,7 +426,6 @@ const auth = getAuth(app);
     } catch (err) { console.error('openEditModal', err); }
   }
 
-  /* ====== BULK TAG MODAL (create if missing) ====== */
   function ensureTagModal() {
     if (document.getElementById('bulk-tag-modal')) return;
     const div = document.createElement('div');
@@ -417,10 +438,9 @@ const auth = getAuth(app);
       <div class="dialog">
         <button class="close" data-close aria-label="Close">×</button>
         <h2>Tag selected targets</h2>
-        <p class="muted">Add an existing tag or create a new one (comma or semicolon separated).</p>
+        <p class="muted">Add tags (comma separated).</p>
         <div style="margin:10px 0;">
           <input id="bulk-tag-input" class="input" placeholder="e.g., web, production" />
-          <div class="muted small" style="margin-top:6px;">Existing tags: <span id="bulk-tag-suggestions" class="muted"></span></div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button class="btn-secondary" data-close>Cancel</button>
@@ -439,42 +459,30 @@ const auth = getAuth(app);
     div.querySelector('#bulk-tag-apply')?.addEventListener('click', ()=> {
       const raw = (document.getElementById('bulk-tag-input')?.value || '').trim();
       const tags = raw.split(/[;,]+/).map(t => t.trim()).filter(Boolean);
-      if (!tags.length) { alert('Enter at least one tag.'); return; }
-      
       const ids = selectedTargetIds();
-      if (!ids.length) { alert('No targets selected.'); div.setAttribute('aria-hidden','true'); return; }
+      if (!tags.length || !ids.length) return;
 
-      // Chamar função de update do Firestore
       updateTagsFirestore(ids, tags).then(() => {
           div.setAttribute('aria-hidden','true');
       });
     });
   }
 
-  /* ====== INIT & LISTENERS ====== */
   function attachIf(el, event, cb) { try { if (!el) return false; el.addEventListener(event, cb); return true; } catch(e){ console.error('attachIf', e); return false; } }
 
   function init() {
     try {
       console.log('iplist:init start (Firebase mode)');
 
-      // 1. AUTH LISTENER - Substitui verificação síncrona
-      onAuthStateChanged(auth, (user) => {
-          if (user) {
-              state.currentUser = user;
-              console.log("Logged in as:", user.email);
-              loadTargets();
-          } else {
-              console.warn("No user, redirecting...");
-              window.location.replace('login.html');
-          }
-      });
+      // 1. Verificar Auth Local
+      if (!requireAuth()) return;
+
+      // 2. Iniciar carregamento (vai esperar pelo Firebase Auth)
+      loadTargets();
 
       ensureTagModal();
-      const suggestions = document.getElementById('bulk-tag-suggestions');
-      if (suggestions) suggestions.textContent = Array.from(allTags).join(', ');
 
-      // Sidebar logic
+      // UI Listeners
       const sidebar = document.getElementById("sidebar");
       const burger = document.getElementById("btn-burger");
       const SAVED = localStorage.getItem("vulnerai.sidebarCollapsed") === "1";
@@ -486,78 +494,69 @@ const auth = getAuth(app);
         localStorage.setItem("vulnerai.sidebarCollapsed", sidebar.classList.contains("collapsed") ? "1" : "0");
       });
 
-      // User Menu logic
       const userBtn = document.getElementById("btn-user");
       const userMenu = document.getElementById("menu-user");
       if (userBtn && userMenu) {
-        const closeUserMenu = ()=> { userBtn.setAttribute("aria-expanded","false"); userMenu.setAttribute("aria-hidden","true"); };
-        const openUserMenu  = ()=> { userBtn.setAttribute("aria-expanded","true");  userMenu.setAttribute("aria-hidden","false"); };
         attachIf(userBtn, 'click', (e)=> {
           e.stopPropagation();
           const isOpen = userMenu.getAttribute("aria-hidden") === "false";
-          if (isOpen) closeUserMenu(); else openUserMenu();
+          userBtn.setAttribute("aria-expanded", !isOpen);
+          userMenu.setAttribute("aria-hidden", isOpen ? "true" : "false");
         });
-        document.addEventListener("click", (e)=> {
-          const clickedInside = userMenu.contains(e.target) || userBtn.contains(e.target);
-          if (!clickedInside) closeUserMenu();
-        });
+        document.addEventListener("click", ()=> userMenu.setAttribute("aria-hidden", "true"));
       }
 
-      // Premium Modal
       attachIf(document.getElementById('btn-premium'), 'click', (e)=> {
         e.stopPropagation();
-        const pm = document.getElementById('modal-premium');
-        if (pm) pm.setAttribute('aria-hidden','false');
+        document.getElementById('modal-premium')?.setAttribute('aria-hidden','false');
       });
       attachIf(document.getElementById('modal-premium'), 'click', (e)=> {
-        if (e.target.hasAttribute('data-close') || e.target.classList.contains('close') || e.target.classList.contains('backdrop')) {
+        if (e.target.hasAttribute('data-close') || e.target.classList.contains('backdrop')) {
           e.currentTarget.setAttribute('aria-hidden','true');
         }
       });
 
-      // --- TARGET POPUP & FORM LOGIC ---
+      // --- ADD TARGET MODAL ---
       const iplistModal = document.getElementById("iplist-modal");
       const btnOpenAdd = document.getElementById("iplist-open-add");
       const iplistForm = document.getElementById("iplist-form");
 
-      // Botão "+ Add Target"
       if (btnOpenAdd && iplistModal && iplistForm) {
         attachIf(btnOpenAdd, 'click', ()=> {
-          document.getElementById("iplist-modal-title") && (document.getElementById("iplist-modal-title").textContent = "Add Target");
+          document.getElementById("iplist-modal-title").textContent = "Add Target";
           iplistForm.reset();
-          // Reset mode
           iplistForm.dataset.mode = "create";
           delete iplistForm.dataset.targetId;
           iplistModal.setAttribute("aria-hidden","false");
         });
-        
         attachIf(iplistModal, 'click', (e)=> {
-          if (e.target.hasAttribute("data-close") || e.target.classList.contains("iplist-close") || e.target.classList.contains("iplist-backdrop")) {
+          if (e.target.hasAttribute("data-close") || e.target.classList.contains("iplist-backdrop")) {
             iplistModal.setAttribute("aria-hidden","true");
           }
         });
       }
 
-      // SUBMIT DO FORMULÁRIO (ADD OU EDIT)
+      // --- FORM SUBMIT (Create/Update) ---
       if (iplistForm) {
         attachIf(iplistForm, 'submit', async (e)=> {
           e.preventDefault();
+          if (!requireAuth()) return; 
+
           try {
             const name = (document.getElementById("iplist-name")?.value || '').trim();
             const kind = document.getElementById("iplist-kind")?.value || 'host';
             const value = (document.getElementById("iplist-value")?.value || '').trim();
 
-            if (!name) { alert("Please enter a Name/Title."); return; }
-            if (!isValidHostOrIPorCIDR(value)) { alert("Please enter a valid Host/IP."); return; }
+            if (!name) { alert("Please enter a Name."); return; }
+            if (!isValidHostOrIPorCIDR(value)) { alert("Invalid Host/IP."); return; }
             
-            // Se for CREATE, verifica duplicados localmente
+            // Check duplicado local
             if (iplistForm.dataset.mode !== "edit") {
                 if (state.targets.some(t => (t.value || '').toLowerCase() === value.toLowerCase())) { 
-                    alert('Target with this value already exists.'); return; 
+                    alert('Target already exists.'); return; 
                 }
             }
 
-            // Ação Firestore
             if (iplistForm.dataset.mode === "edit") {
                 const id = iplistForm.dataset.targetId;
                 await updateTargetInFirestore(id, { name, kind, value });
@@ -567,7 +566,7 @@ const auth = getAuth(app);
 
             iplistForm.reset();
             iplistModal && iplistModal.setAttribute("aria-hidden","true");
-          } catch(err) { console.error('iplistForm submit', err); }
+          } catch(err) { console.error('form submit', err); }
         });
       }
 
@@ -576,7 +575,7 @@ const auth = getAuth(app);
       attachIf(document.getElementById("tgt-sort"), 'change', renderTargets);
       attachIf(document.getElementById("tags-filter"), 'change', renderTargets);
 
-      // Checkboxes & Bulk
+      // Bulk Actions
       attachIf(document.getElementById("tgt-checkall"), 'change', (e)=> {
         qsa('#targets-list input[type="checkbox"]').forEach(c => c.checked = e.target.checked);
         updateBulkCount();
@@ -584,14 +583,15 @@ const auth = getAuth(app);
       attachIf(document.getElementById("targets-list"), 'change', (e)=> {
         if (e.target && e.target.type === "checkbox") updateBulkCount();
       });
-
-      // Bulk Delete
       attachIf(document.getElementById("tgt-bulk-delete"), 'click', ()=> {
-        const ids = selectedTargetIds();
-        batchDeleteFirestore(ids);
+        batchDeleteFirestore(selectedTargetIds());
       });
-
-      // Bulk Scan
+      attachIf(document.getElementById("tgt-bulk-tags"), 'click', ()=> {
+        const ids = selectedTargetIds();
+        if (!ids.length) { alert('No targets selected.'); return; }
+        document.getElementById('bulk-tag-input') && (document.getElementById('bulk-tag-input').value = '');
+        document.getElementById('bulk-tag-modal') && document.getElementById('bulk-tag-modal').setAttribute('aria-hidden','false');
+      });
       attachIf(document.getElementById("tgt-bulk-scan"), 'click', ()=> {
         const ids = selectedTargetIds();
         if (!ids.length) return;
@@ -599,42 +599,31 @@ const auth = getAuth(app);
           const t = state.targets.find(x => x.id === ids[0]);
           if (t) window.location.href = `scans.html?target=${encodeURIComponent(t.value)}&id=${t.id}`;
         } else {
-          // Exemplo: passar IDs via URL ou localStorage para página de scan
           alert("Multi-scan not implemented in UI yet.");
         }
       });
 
-      // Bulk Tags
-      attachIf(document.getElementById("tgt-bulk-tags"), 'click', ()=> {
-        const ids = selectedTargetIds();
-        if (!ids.length) { alert('No targets selected.'); return; }
-        document.getElementById('bulk-tag-input') && (document.getElementById('bulk-tag-input').value = '');
-        document.getElementById('bulk-tag-modal') && document.getElementById('bulk-tag-modal').setAttribute('aria-hidden','false');
-      });
-
-      // CSV Upload
+      // CSV Import
       let csvInput = document.getElementById("csv-upload-input");
       if (!csvInput) {
         csvInput = document.createElement("input");
         csvInput.type = "file";
-        csvInput.accept = ".csv,text/csv";
+        csvInput.accept = ".csv";
         csvInput.style.display = "none";
         csvInput.id = "csv-upload-input";
         document.body.appendChild(csvInput);
       }
       attachIf(document.getElementById("iplist-import-csv"), 'click', ()=> csvInput.click());
       attachIf(csvInput, 'change', (e) => {
-        const file = e.target.files && e.target.files[0];
-        if (file) handleCSVImport(file);
+        if (e.target.files[0]) handleCSVImport(e.target.files[0]);
         e.target.value = "";
       });
 
-      // Cliques na lista (Edit, Delete, Start Scan)
+      // Lista Actions (Edit/Delete/Scan)
       attachIf(document.getElementById("view-iplist"), 'click', (e)=> {
         const btn = e.target.closest("button[data-action]");
-        
-        // Tratar clique em TAG (chip)
         const chip = e.target.closest('.chip-tag');
+        
         if (chip && chip.dataset.tag) {
              const tag = chip.dataset.tag;
              const tagSel = document.getElementById('tags-filter');
@@ -643,48 +632,31 @@ const auth = getAuth(app);
         }
 
         if (!btn) return;
-        
         const id = btn.dataset.id;
         const target = state.targets.find(x => x.id === id);
         if (!target) return;
 
         const act = btn.dataset.action;
-        if (act === "delete") {
-            deleteTargetFromFirestore(id);
-            return;
-        }
-        if (act === "edit") { 
-            openEditModal(target); 
-            return; 
-        }
+        if (act === "delete") deleteTargetFromFirestore(id);
+        if (act === "edit") openEditModal(target);
         if (act === "tags") {
             const current = prompt("Enter tags (comma-separated):", (target.tags || []).join(", ")) || "";
             const tags = current.split(/[;,]+/).map(t => t.trim()).filter(Boolean);
             if (tags.length) updateTagsFirestore([id], tags);
-            return;
         }
         if (act === "start-scan" || act === "view-scans") { 
             window.location.href = `scans.html?target=${encodeURIComponent(target.value)}&id=${target.id}`; 
-            return; 
         }
       });
 
-      attachIf(document.getElementById('targets-list'), 'click', (e)=> {
-          // Fallback para clicks dentro da lista se view-iplist não apanhar
-          const chip = e.target.closest('.chip-tag');
-          if (chip && chip.dataset.tag) {
-            const tag = chip.dataset.tag;
-            const tagSel = document.getElementById('tags-filter');
-            if (tagSel) { tagSel.value = tag; renderTargets(); }
-          }
-      });
-
-      // Logout / Upgrade
-      // (Mantido a lógica original de logout dentro do listener do menu, mas agora o auth listener vai redirecionar)
+      // Logout
       attachIf(document.getElementById('menu-user'), 'click', (e) => {
           const item = e.target.closest(".menu-item");
           if (item && item.dataset.action === "logout") {
-             auth.signOut().then(() => localStorage.removeItem('vulnerai.auth'));
+             auth.signOut().then(() => {
+                 localStorage.removeItem('vulnerai.auth');
+                 window.location.href = "login.html";
+             });
           }
       });
 
@@ -708,40 +680,24 @@ if (window.location.pathname.includes('scans.html') || window.location.pathname.
 
       if (target && targetId) {
         console.log('[Auto-Scan] Parâmetros detectados:', { target, targetId });
-
         const startScan = () => {
-          const selectors = [
-            '#start-scan-btn',
-            'button[data-action="start-scan"]',
-            '.btn-start-scan',
-            'button:contains("Start Scan")',
-            '#btn-start-scan'
-          ];
-
+          const selectors = ['#start-scan-btn', 'button[data-action="start-scan"]', '#btn-start-scan'];
           for (const sel of selectors) {
             const btn = document.querySelector(sel);
-            if (btn && !btn.disabled && btn.offsetParent !== null) {
-              console.log('[Auto-Scan] Botão encontrado:', sel);
+            if (btn && !btn.disabled) {
               setTimeout(() => btn.click(), 300); 
               return true;
             }
           }
           return false;
         };
-
         if (startScan()) return;
-
         let attempts = 0;
         const interval = setInterval(() => {
           attempts++;
-          if (startScan() || attempts > 80) {
-            clearInterval(interval);
-          }
+          if (startScan() || attempts > 80) clearInterval(interval);
         }, 100);
-
       }
-    } catch (e) {
-      console.error('[Auto-Scan] Erro:', e);
-    }
+    } catch (e) { console.error('[Auto-Scan] Erro:', e); }
   });
 }
