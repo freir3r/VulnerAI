@@ -2509,8 +2509,8 @@ app.use(helmet());
 
 // Basic rate limiter to protect endpoints from abuse
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Increase the limit
+  windowMs: 1 * 60 * 1000, // 1 minutes
+  max: 1500, // Increase the limit
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
@@ -2522,6 +2522,7 @@ const apiLimiter = rateLimit({
       // This is likely a polling request for scan status
       return true;
     }
+  
     if (req.method === 'OPTIONS') return true;
     return false;
   }
