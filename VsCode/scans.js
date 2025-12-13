@@ -243,49 +243,61 @@ function saveTargets() {
 async function loadScans() {
   try {
     const userId = getCurrentUserId();
-    console.log('Current User ID:', userId);
-    console.log('Auth Data:', localStorage.getItem(AUTH_KEY));
+    console.log('Loading scans for user:', userId);
 
     const response = await nmapAPI.getUserScans(userId);
     console.log('API Response:', response);
 
     if (response && response.scans) {
-      // Convert API response to local model
-      const convertedScans = response.scans.map(scan => ({
-        id: scan.id,
-        targetValue: scan.target,
-        // Mantemos a leitura para compatibilidade, mas a lógica de criação foi simplificada
-        targetId: scan.target_ids ? scan.target_ids[0] : null,
-        targetIds: scan.target_ids || [],
+      const convertedScans = response.scans.map(scan => {
         
-        type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
-        preset: scan.preset_used || scan.scan_type,
-        proto: 'TCP', // Default, can be adjusted if API provides this info
-        startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : Date.now(),
-        status: scan.status === 'complete' ? 'Completed' :
-          scan.status === 'ongoing' ? 'ongoing' : 'failed',
-        apiStatus: scan,
+        // --- CORREÇÃO DA DATA AQUI ---
+        // Esta lógica garante que a data funciona sempre
+        let startedAt = Date.now();
+        
+        if (scan.submitted_at) {
+            if (typeof scan.submitted_at === 'string') {
+                // Se vier como texto (ex: "2025-12-13T10:00...")
+                startedAt = new Date(scan.submitted_at).getTime();
+            } else if (scan.submitted_at._seconds) {
+                // Se vier como objeto Firestore { _seconds: ... }
+                startedAt = scan.submitted_at._seconds * 1000;
+            }
+        }
+        // -----------------------------
 
-        // QUICK SCAN SPECIFIC DATA
-        activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
-        totalHosts: scan.summary?.total_hosts || 0,
-        openPorts: [], // Will be populated from ScanResults
-        totalPorts: scan.summary?.open_ports_total || 0,
-        deviceTypes: scan.summary?.device_types || [],
-        scanDuration: scan.summary?.scan_duration || '',
+        return {
+          id: scan.id,
+          targetValue: scan.target,
+          type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
+          preset: scan.preset_used || scan.scan_type,
+          proto: 'TCP',
+          
+          startedAt: startedAt, // Data corrigida
+          
+          status: scan.status === 'complete' ? 'Completed' :
+                  scan.status === 'ongoing' ? 'ongoing' : 'failed',
+          apiStatus: scan,
 
-        cveList: [],
-        cves: scan.summary?.vulnerabilities_total || 0,
-        user_id: scan.user_id,
+          // QUICK SCAN SPECIFIC DATA
+          activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
+          totalHosts: scan.summary?.total_hosts || 0,
+          openPorts: [], 
+          totalPorts: scan.summary?.open_ports_total || 0,
+          deviceTypes: scan.summary?.device_types || [],
+          scanDuration: scan.summary?.scan_duration || '',
 
-        // additional fields
-        summary: scan.summary,
-        is_network_scan: scan.is_network_scan,
-        scan_name: scan.scan_name,
-        finished_at: scan.finished_at,
-        // Simplificado: Assumimos 'normal' já que removemos os outros modos da UI de criação
-        scan_mode: 'normal' 
-      }));
+          cveList: [],
+          cves: scan.summary?.vulnerabilities_total || 0,
+          user_id: scan.user_id,
+
+          summary: scan.summary,
+          is_network_scan: scan.is_network_scan,
+          scan_name: scan.scan_name,
+          finished_at: scan.finished_at,
+          scan_mode: 'normal' 
+        };
+      });
 
       return convertedScans;
     }
@@ -1692,9 +1704,37 @@ function exportScanToCSV(scanId) {
   link.click();
   document.body.removeChild(link);
 }
+
+/* ====== AUTO-FILTER FROM URL ====== */
+function checkUrlForTarget() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const target = urlParams.get('target');
+    
+    if (target) {
+        console.log(`[Auto-Filter] Found target in URL: ${target}`);
+        const searchInput = document.getElementById('history-filter-search');
+        
+        // Preencher input e atualizar estado do filtro
+        if (searchInput) {
+            searchInput.value = target;
+            pagination.filters.search = target;
+            pagination.currentPage = 1;
+            
+            // Forçar renderização imediata com o filtro aplicado
+            renderScansHistory();
+        }
+    }
+}
+
 /* ====== INIT ====== */
 async function init() {
   if (!requireAuth()) return;
+
+  // Carregar scans da Firebase no início
+  state.scans = await loadScans();
+
+  // ADICIONA ESTA LINHA AQUI:
+  checkUrlForTarget();
 
   // DARK MODE
   const themeQuick = localStorage.getItem("vulnerai.theme");

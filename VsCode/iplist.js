@@ -1,8 +1,4 @@
-/* iplist.js — Firebase Integrated Version
-   - Uses LocalStorage for quick UI Auth Check (Your requirement)
-   - Uses Firebase SDK Auth for Database Security
-   - Persists data to Firestore "Targets" collection
-*/
+/* iplist.js — Firebase Integrated Version with Real-Time Stats */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { 
@@ -29,10 +25,9 @@ const auth = getAuth(app);
 (function(){
   'use strict';
 
-  /* ====== AUTH (Mantido como pediste + Helper para DB) ====== */
+  /* ====== AUTH ====== */
   const AUTH_KEY = 'vulnerai.auth';
 
-  // 1. A tua verificação original via LocalStorage (Rápida para UI)
   function isLoggedIn() {
     try { return !!JSON.parse(localStorage.getItem(AUTH_KEY)); }
     catch { return false; }
@@ -47,60 +42,140 @@ const auth = getAuth(app);
     return true;
   }
 
-  // 2. Helper para garantir que temos o UID seguro para falar com a Base de Dados
+  /* ====== STATE ====== */
+  const state = { 
+      targets: [],
+      currentUser: null,
+      isFirebaseReady: false
+  };
+
+  let allTags = new Set();
+
+  /* ====== HELPERS ====== */
+  const qs = (s, el = document) => el.querySelector(s);
+  const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
+  const uid = () => Math.random().toString(36).slice(2, 9);
+
+  // Helper para formatar data (Dia, Hora:Minutos)
+  function formatDateNice(timestamp) {
+      if (!timestamp || timestamp === "-") return "-";
+      
+      // Se for timestamp do Firestore (objeto com seconds)
+      let date;
+      if (timestamp.seconds) {
+          date = new Date(timestamp.seconds * 1000);
+      } else {
+          date = new Date(timestamp);
+      }
+
+      if (isNaN(date.getTime())) return "-";
+
+      // Formato: 13/12/2025 18:30
+      return new Intl.DateTimeFormat('pt-PT', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+      }).format(date);
+  }
+
+  /* ====== FIRESTORE ACTIONS ====== */
+  
   async function ensureFirebaseUser() {
-      if (auth.currentUser) return auth.currentUser;
-      return new Promise((resolve, reject) => {
+      if (state.currentUser) return state.currentUser;
+      return new Promise((resolve) => {
           const unsubscribe = onAuthStateChanged(auth, (user) => {
               unsubscribe();
-              if (user) resolve(user);
-              else {
-                  // Se falhar aqui, o token local pode ser inválido
+              if (user) {
+                  state.currentUser = user;
+                  state.isFirebaseReady = true;
+                  resolve(user);
+              } else {
+                  console.warn("Firebase Auth falhou.");
                   window.location.replace('login.html');
-                  reject('No Firebase User');
+                  resolve(null);
               }
           });
       });
   }
 
-  /* ====== STATE ====== */
-  const state = { targets: [] };
-  let allTags = new Set(); // Usamos Set para evitar duplicados
-
-  /* ====== HELPERS ====== */
-  const qs = (s, el = document) => el.querySelector(s);
-  const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
-  const uid = () => Math.random().toString(36).slice(2, 9); // Fallback para UI
-
-  /* ====== FIRESTORE ACTIONS (Substitui LocalStorage) ====== */
-
-  // 1. LOAD TARGETS
+  // 1. CARREGAR (COM ESTATÍSTICAS DA COLEÇÃO SCAN)
   async function loadTargets() {
-    if (!requireAuth()) return; // A tua verificação
+    if (!requireAuth()) return;
     
+    const user = await ensureFirebaseUser();
+    if (!user) return;
+
     try {
-        const user = await ensureFirebaseUser(); // Espera pelo Auth do Firebase
+        console.log("A carregar Targets e Scans...");
+
+        // 1. Buscar Targets do User
+        const qTargets = query(collection(db, "Targets"), where("user_id", "==", user.uid));
+        const targetsSnap = await getDocs(qTargets);
         
-        const q = query(collection(db, "Targets"), where("user_id", "==", user.uid));
-        const querySnapshot = await getDocs(q);
-        
+        // 2. Buscar Scans do User (para calcular estatísticas)
+        const qScans = query(collection(db, "Scan"), where("user_id", "==", user.uid));
+        const scansSnap = await getDocs(qScans);
+
+        // Converter scans para array simples
+        const allScans = [];
+        scansSnap.forEach(doc => allScans.push(doc.data()));
+
         state.targets = [];
         allTags.clear();
 
-        querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            // Converter Snake_case (BD) para CamelCase (UI)
+        targetsSnap.forEach((docSnap) => {
+            const tData = docSnap.data();
+            
+            // --- LÓGICA DE ESTATÍSTICA ---
+            // Encontrar scans que correspondem a este target (pelo campo 'value' == 'target')
+            const relevantScans = allScans.filter(scan => scan.target === tData.value);
+            
+            // 1. Quantidade de Scans
+            const totalScans = relevantScans.length;
+
+            // 2. Encontrar o último scan (para data e CVEs atuais)
+            let lastScanDate = "-";
+            let currentCVEs = 0;
+
+            if (totalScans > 0) {
+                // Ordenar por data (mais recente primeiro)
+                relevantScans.sort((a, b) => {
+                    const dateA = a.submitted_at?.seconds ? a.submitted_at.seconds : (a.submitted_at || 0);
+                    const dateB = b.submitted_at?.seconds ? b.submitted_at.seconds : (b.submitted_at || 0);
+                    return dateB - dateA;
+                });
+
+                const latest = relevantScans[0];
+                
+                // Definir data do último scan
+                if (latest.submitted_at) {
+                    lastScanDate = latest.submitted_at;
+                }
+
+                // Definir CVEs do último scan (assumindo que está em summary.vulnerabilities_total)
+                if (latest.summary && typeof latest.summary.vulnerabilities_total !== 'undefined') {
+                    currentCVEs = latest.summary.vulnerabilities_total;
+                }
+            }
+
+            // Construir objeto final
             const target = {
                 id: docSnap.id, 
-                name: data.name,
-                value: data.value,
-                kind: data.kind || (data.value.includes('/') ? 'network' : 'host'),
-                addedAt: data.added_at || Date.now(),
-                tags: data.tags || [],
-                scans: data.scans || 0,
-                cves: data.cves || 0,
-                lastScan: data.last_scan || "-"
+                name: tData.name,
+                value: tData.value,
+                kind: tData.kind || (tData.value.includes('/') ? 'network' : 'host'),
+                addedAt: tData.added_at || Date.now(),
+                user_id: tData.user_id,
+                tags: tData.tags || [],
+                
+                // Dados calculados dinamicamente
+                scans: totalScans,
+                cves: currentCVEs,
+                lastScan: lastScanDate
             };
+
             state.targets.push(target);
             
             if (target.tags && Array.isArray(target.tags)) {
@@ -110,29 +185,28 @@ const auth = getAuth(app);
 
         renderTargets();
         renderTagsFilter();
-    } catch (e) {
-        console.error("Erro ao carregar targets:", e);
+    } catch (error) {
+        console.error("Erro ao carregar dados:", error);
     }
   }
 
-  // 2. ADD TARGET (Guardar na Firebase)
+  // 2. ADICIONAR (CREATE)
   async function addTargetToFirestore(targetData) {
-      if (!requireAuth()) return;
+      if (!requireAuth()) return false;
       const user = await ensureFirebaseUser();
+      if (!user) return false;
 
       try {
           await addDoc(collection(db, "Targets"), {
               name: targetData.name,
               value: targetData.value,
               kind: targetData.kind,
-              user_id: user.uid, // Associa ao User
+              user_id: user.uid,
               added_at: Date.now(),
-              tags: targetData.tags || [],
-              scans: 0, 
-              cves: 0, 
-              last_scan: "-"
+              tags: targetData.tags || []
+              // Nota: não precisamos salvar scans/cves aqui, pois são calculados dinamicamente
           });
-          await loadTargets(); // Atualiza a lista
+          await loadTargets(); 
           return true;
       } catch (e) {
           console.error("Erro ao salvar:", e);
@@ -141,7 +215,7 @@ const auth = getAuth(app);
       }
   }
 
-  // 3. UPDATE TARGET
+  // 3. EDITAR (UPDATE)
   async function updateTargetInFirestore(id, updatedData) {
       if (!requireAuth()) return;
       await ensureFirebaseUser();
@@ -153,7 +227,7 @@ const auth = getAuth(app);
       } catch (e) { console.error("Erro ao atualizar:", e); }
   }
 
-  // 4. DELETE TARGET
+  // 4. APAGAR (DELETE)
   async function deleteTargetFromFirestore(id) {
       if (!requireAuth()) return;
       await ensureFirebaseUser();
@@ -270,16 +344,20 @@ const auth = getAuth(app);
       wrap.innerHTML = "";
       list.forEach(t => {
         const riskClass = getRiskColor(t.cves || 0);
+        
+        // Data de adição
         const dateObj = new Date(t.addedAt);
         const addedStr = !isNaN(dateObj) ? dateObj.toISOString().slice(0,10) : '-';
-        const lastScanStr = t.lastScan && t.lastScan !== '-' ? new Date(t.lastScan).toISOString().slice(0,10) : '-';
+        
+        // Data do último scan (formatada com dia e hora)
+        const lastScanStr = formatDateNice(t.lastScan);
 
         let vulnChips = "";
-        if (t.vulnSummary) {
-          const vs = t.vulnSummary;
-          if (vs.critical) vulnChips += `<span class="chip chip-critical" title="Critical">C:${vs.critical}</span>`;
-          if (vs.high)     vulnChips += `<span class="chip chip-high" title="High">H:${vs.high}</span>`;
-          if (vs.medium)   vulnChips += `<span class="chip chip-medium" title="Medium">M:${vs.medium}</span>`;
+        // Se quiseres mostrar badges de risco (opcional, requer lógica adicional no objeto t)
+        if (t.cves > 0) {
+             vulnChips = `<span class="chip ${riskClass}" title="Total Vulnerabilities">${t.cves} CVEs</span>`;
+        } else {
+             vulnChips = `<span class="chip chip-green">0 CVEs</span>`;
         }
 
         const art = document.createElement("article");
@@ -292,17 +370,15 @@ const auth = getAuth(app);
             <div class="tgt-line">
               <span class="tgt-name">${escapeHtml(t.name)}</span>
               <span class="badge kind">${t.kind === "network" ? "Network" : "Host"}</span>
-              <span class="chip ${riskClass}">${t.cves ?? 0} CVE${(t.cves ?? 0) !== 1 ? 's' : ''}</span>
-              ${(t.tags || []).map(tag => `<button class="chip chip-tag" data-tag="${escapeHtml(tag)}" title="Filter by ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join(' ')}
               ${vulnChips}
+              ${(t.tags || []).map(tag => `<button class="chip chip-tag" data-tag="${escapeHtml(tag)}" title="Filter by ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join(' ')}
             </div>
             <div class="tgt-sub muted">${escapeHtml(t.value)} • Added: ${addedStr}</div>
           </div>
 
           <div class="tgt-stats">
-            <div class="stat"><span class="num">${t.scans ?? 0}</span><span class="lbl">Scans</span></div>
-            <div class="stat"><span class="num">${t.cves ?? 0}</span><span class="lbl">Unique CVEs</span></div>
-            <div class="stat"><span class="num">${lastScanStr}</span><span class="lbl">Last scan</span></div>
+            <div class="stat"><span class="num">${t.scans}</span><span class="lbl">Total Scans</span></div>
+            <div class="stat"><span class="num" style="font-size:0.9em">${lastScanStr}</span><span class="lbl">Last scan</span></div>
           </div>
 
           <div class="tgt-actions">
@@ -341,7 +417,7 @@ const auth = getAuth(app);
     } catch(e){ console.error(e); }
   }
 
-  /* ====== CSV IMPORT (Firestore) ====== */
+  /* ====== CSV IMPORT ====== */
   function handleCSVImport(file) {
     if (!requireAuth()) return;
 
@@ -379,7 +455,7 @@ const auth = getAuth(app);
               name, value, kind,
               user_id: user.uid,
               added_at: Date.now(),
-              tags, scans: 0, cves: 0, last_scan: "-"
+              tags
           });
           
           existingValues.add(value.toLowerCase());
@@ -472,12 +548,12 @@ const auth = getAuth(app);
 
   function init() {
     try {
-      console.log('iplist:init start (Firebase mode)');
+      console.log('iplist:init start (Firebase mode + Stats)');
 
       // 1. Verificar Auth Local
       if (!requireAuth()) return;
 
-      // 2. Iniciar carregamento (vai esperar pelo Firebase Auth)
+      // 2. Iniciar carregamento
       loadTargets();
 
       ensureTagModal();
@@ -550,7 +626,6 @@ const auth = getAuth(app);
             if (!name) { alert("Please enter a Name."); return; }
             if (!isValidHostOrIPorCIDR(value)) { alert("Invalid Host/IP."); return; }
             
-            // Check duplicado local
             if (iplistForm.dataset.mode !== "edit") {
                 if (state.targets.some(t => (t.value || '').toLowerCase() === value.toLowerCase())) { 
                     alert('Target already exists.'); return; 
@@ -575,7 +650,7 @@ const auth = getAuth(app);
       attachIf(document.getElementById("tgt-sort"), 'change', renderTargets);
       attachIf(document.getElementById("tags-filter"), 'change', renderTargets);
 
-      // Bulk Actions
+      // Checkboxes & Bulk
       attachIf(document.getElementById("tgt-checkall"), 'change', (e)=> {
         qsa('#targets-list input[type="checkbox"]').forEach(c => c.checked = e.target.checked);
         updateBulkCount();
@@ -619,7 +694,7 @@ const auth = getAuth(app);
         e.target.value = "";
       });
 
-      // Lista Actions (Edit/Delete/Scan)
+      // Lista Actions
       attachIf(document.getElementById("view-iplist"), 'click', (e)=> {
         const btn = e.target.closest("button[data-action]");
         const chip = e.target.closest('.chip-tag');
@@ -669,7 +744,7 @@ const auth = getAuth(app);
 })();
 
 /* ===================================================== */
-/* AUTO-START SCAN ON scans.html?target=IP&id=XYZ       */
+/* AUTO-START SCAN                                       */
 /* ===================================================== */
 if (window.location.pathname.includes('scans.html') || window.location.pathname.endsWith('/scans')) {
   document.addEventListener('DOMContentLoaded', () => {
