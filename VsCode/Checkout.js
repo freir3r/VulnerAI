@@ -1,4 +1,6 @@
 
+
+
 // frontend/checkout.js (completo e actualizado)
 // Principais alterações:
 // 1) Melhora de debug (logs no console) para confirmar billing enviado.
@@ -20,31 +22,34 @@ const API_BASE = 'http://127.0.0.1:4242'; // ajusta se o teu backend usar outro 
 /* ============================
    FUNÇÕES BÁSICAS
    ============================ */
-
-// recalcula totais e atualiza UI
+// recalcula totais e atualiza UI (SEM VAT)
 function recalcSummary() {
   let billing = (localStorage.getItem(BILLING_KEY) || 'monthly').toLowerCase();
   const isMonthly = billing === 'monthly';
 
-  // valores base — ajusta se mudares preços reais
+  // preços base
   const monthlyPrice = 9.99;
-  const yearlyPriceTotal = 95.88; // preço anual total
-  const monthlyEquivalent = yearlyPriceTotal / 12; // se mostrares equivalente por mês
+  const yearlyPriceTotal = 95.88;
 
-  const base = isMonthly ? monthlyPrice : monthlyEquivalent;
-  const vat = base * 0.23;
-  const tot = base + vat;
+  const base = isMonthly ? monthlyPrice : yearlyPriceTotal;
 
-  $('#sum-plan').textContent = isMonthly ? 'Premium — Monthly' : 'Premium — Yearly';
-  // mostra o preço correcto por mês (ou equivalente)
-  $('#sum-price').textContent = isMonthly ? `${formatEuro(monthlyPrice)} / mo` : `${formatEuro(monthlyEquivalent)} / mo`;
-  $('#sum-billed').textContent = isMonthly ? 'Billed monthly' : `Billed yearly (${formatEuro(yearlyPriceTotal)}/yr, save 20%)`;
-  $('#sum-vat').textContent = formatEuro(vat);
-  $('#sum-total').textContent = formatEuro(tot);
+  $('#sum-plan').textContent  = isMonthly ? 'Premium — Monthly' : 'Premium — Yearly';
+  $('#sum-price').textContent = isMonthly
+    ? `${formatEuro(monthlyPrice)} / mo`
+    : `${formatEuro(yearlyPriceTotal)} / yr`;
 
+  $('#sum-billed').textContent = isMonthly
+    ? 'Billed monthly'
+    : 'Billed yearly (save 20%)';
+
+  // total = preço base (sem VAT)
+  $('#sum-total').textContent = formatEuro(base);
+
+  // botões ativos
   $('#btn-monthly')?.classList.toggle('active', isMonthly);
   $('#btn-yearly')?.classList.toggle('active', !isMonthly);
 }
+
 
 function formatEuro(n){ return `€${Number(n || 0).toFixed(2)}`; }
 
@@ -355,3 +360,4 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Error during init:', err);
   }
 });
+
