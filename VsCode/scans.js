@@ -1706,23 +1706,70 @@ function exportScanToCSV(scanId) {
 }
 
 /* ====== AUTO-FILTER FROM URL ====== */
+/* ====== AUTO-FILTER FROM URL ====== */
 function checkUrlForTarget() {
     const urlParams = new URLSearchParams(window.location.search);
     const target = urlParams.get('target');
+    const action = urlParams.get('action');
+    
+    // CORREÇÃO: Se a ação for 'start', NÃO filtramos a lista de histórico.
+    // Assim o utilizador foca-se apenas no modal que vai abrir.
+    if (action === 'start') {
+        return; 
+    }
     
     if (target) {
         console.log(`[Auto-Filter] Found target in URL: ${target}`);
-        const searchInput = document.getElementById('history-filter-search');
         
-        // Preencher input e atualizar estado do filtro
+        // 1. Preencher a barra de pesquisa visualmente
+        const searchInput = document.getElementById('history-filter-search');
         if (searchInput) {
             searchInput.value = target;
-            pagination.filters.search = target;
-            pagination.currentPage = 1;
-            
-            // Forçar renderização imediata com o filtro aplicado
-            renderScansHistory();
         }
+
+        // 2. Atualizar o estado do filtro da paginação
+        pagination.filters.search = target;
+        pagination.currentPage = 1;
+        
+        // 3. Forçar a renderização imediata com o filtro
+        renderScansHistory();
+    }
+}
+
+/* ====== AUTO-OPEN NEW SCAN MODAL ====== */
+function checkUrlForAutoStart() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+    const target = urlParams.get('target');
+    const targetId = urlParams.get('id');
+
+    // Se a ação for 'start' e tivermos um target
+    if (action === 'start' && target) {
+        console.log(`[Auto-Start] Preparing scan for: ${target}`);
+        
+        // 1. Abrir o modal
+        showNewScanModal();
+
+        // 2. Preencher o formulário (pequeno delay para garantir que o modal abriu)
+        setTimeout(() => {
+            const targetInput = document.getElementById("ns-target");
+            const chooseSelect = document.getElementById("ns-choose");
+            
+            // Preencher input manual
+            if (targetInput) {
+                targetInput.value = target;
+                // Disparar evento de input para ativar o botão 'Start'
+                targetInput.dispatchEvent(new Event('input'));
+            }
+
+            // Tentar selecionar no dropdown se tivermos ID (opcional, mas fica bonito)
+            if (targetId && chooseSelect) {
+                chooseSelect.value = targetId;
+            }
+            
+            // Atualizar o estado do botão Start
+            updateStartEnabled();
+        }, 100);
     }
 }
 
@@ -1733,8 +1780,11 @@ async function init() {
   // Carregar scans da Firebase no início
   state.scans = await loadScans();
 
-  // ADICIONA ESTA LINHA AQUI:
+  // AUTO-OPEN NEW SCAN MODAL IF URL PARAMS
   checkUrlForTarget();
+
+  // AUTO-START NEW SCAN IF URL PARAMS
+  checkUrlForAutoStart();
 
   // DARK MODE
   const themeQuick = localStorage.getItem("vulnerai.theme");
