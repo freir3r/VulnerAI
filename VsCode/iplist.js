@@ -1,28 +1,28 @@
 /* iplist.js — Firebase Integrated Version with Real-Time Stats */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { 
-    getFirestore, collection, addDoc, getDocs, 
-    query, where, deleteDoc, doc, updateDoc, writeBatch 
+import {
+  getFirestore, collection, addDoc, getDocs,
+  query, where, deleteDoc, doc, updateDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-    apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
-    authDomain: "vulnerai.firebaseapp.com",
-    projectId: "vulnerai",
-    storageBucket: "vulnerai.firebasestorage.app",
-    messagingSenderId: "576892753213",
-    appId: "1:576892753213:web:b418a23c16b808c1d4a154",
-    measurementId: "G-K38GLCC5XL"
+  apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+  authDomain: "vulnerai.firebaseapp.com",
+  projectId: "vulnerai",
+  storageBucket: "vulnerai.firebasestorage.app",
+  messagingSenderId: "576892753213",
+  appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+  measurementId: "G-K38GLCC5XL"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-(function(){
+(function () {
   'use strict';
 
   /* ====== AUTH ====== */
@@ -36,17 +36,17 @@ const auth = getAuth(app);
   function requireAuth() {
     if (!isLoggedIn()) {
       console.warn('requireAuth: not logged in — redirecting to login.html');
-      try { window.location.replace('login.html'); } catch(e) {}
+      try { window.location.replace('login.html'); } catch (e) { }
       return false;
     }
     return true;
   }
 
   /* ====== STATE ====== */
-  const state = { 
-      targets: [],
-      currentUser: null,
-      isFirebaseReady: false
+  const state = {
+    targets: [],
+    currentUser: null,
+    isFirebaseReady: false
   };
 
   let allTags = new Set();
@@ -58,227 +58,227 @@ const auth = getAuth(app);
 
   // Helper para formatar data (Dia, Hora:Minutos)
   function formatDateNice(timestamp) {
-      if (!timestamp || timestamp === "-") return "-";
-      
-      // Se for timestamp do Firestore (objeto com seconds)
-      let date;
-      if (timestamp.seconds) {
-          date = new Date(timestamp.seconds * 1000);
-      } else {
-          date = new Date(timestamp);
-      }
+    if (!timestamp || timestamp === "-") return "-";
 
-      if (isNaN(date.getTime())) return "-";
+    // Se for timestamp do Firestore (objeto com seconds)
+    let date;
+    if (timestamp.seconds) {
+      date = new Date(timestamp.seconds * 1000);
+    } else {
+      date = new Date(timestamp);
+    }
 
-      // Formato: 13/12/2025 18:30
-      return new Intl.DateTimeFormat('pt-PT', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-      }).format(date);
+    if (isNaN(date.getTime())) return "-";
+
+    // Formato: 13/12/2025 18:30
+    return new Intl.DateTimeFormat('pt-PT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
   }
 
   /* ====== FIRESTORE ACTIONS ====== */
-  
+
   async function ensureFirebaseUser() {
-      if (state.currentUser) return state.currentUser;
-      return new Promise((resolve) => {
-          const unsubscribe = onAuthStateChanged(auth, (user) => {
-              unsubscribe();
-              if (user) {
-                  state.currentUser = user;
-                  state.isFirebaseReady = true;
-                  resolve(user);
-              } else {
-                  console.warn("Firebase Auth falhou.");
-                  window.location.replace('login.html');
-                  resolve(null);
-              }
-          });
+    if (state.currentUser) return state.currentUser;
+    return new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        unsubscribe();
+        if (user) {
+          state.currentUser = user;
+          state.isFirebaseReady = true;
+          resolve(user);
+        } else {
+          console.warn("Firebase Auth falhou.");
+          window.location.replace('login.html');
+          resolve(null);
+        }
       });
+    });
   }
 
   // 1. CARREGAR (COM ESTATÍSTICAS DA COLEÇÃO SCAN)
   async function loadTargets() {
     if (!requireAuth()) return;
-    
+
     const user = await ensureFirebaseUser();
     if (!user) return;
 
     try {
-        console.log("A carregar Targets e Scans...");
+      console.log("A carregar Targets e Scans...");
 
-        // 1. Buscar Targets do User
-        const qTargets = query(collection(db, "Targets"), where("user_id", "==", user.uid));
-        const targetsSnap = await getDocs(qTargets);
-        
-        // 2. Buscar Scans do User (para calcular estatísticas)
-        const qScans = query(collection(db, "Scan"), where("user_id", "==", user.uid));
-        const scansSnap = await getDocs(qScans);
+      // 1. Buscar Targets do User
+      const qTargets = query(collection(db, "Targets"), where("user_id", "==", user.uid));
+      const targetsSnap = await getDocs(qTargets);
 
-        // Converter scans para array simples
-        const allScans = [];
-        scansSnap.forEach(doc => allScans.push(doc.data()));
+      // 2. Buscar Scans do User (para calcular estatísticas)
+      const qScans = query(collection(db, "Scan"), where("user_id", "==", user.uid));
+      const scansSnap = await getDocs(qScans);
 
-        state.targets = [];
-        allTags.clear();
+      // Converter scans para array simples
+      const allScans = [];
+      scansSnap.forEach(doc => allScans.push(doc.data()));
 
-        targetsSnap.forEach((docSnap) => {
-            const tData = docSnap.data();
-            
-            // --- LÓGICA DE ESTATÍSTICA ---
-            // Encontrar scans que correspondem a este target (pelo campo 'value' == 'target')
-            const relevantScans = allScans.filter(scan => scan.target === tData.value);
-            
-            // 1. Quantidade de Scans
-            const totalScans = relevantScans.length;
+      state.targets = [];
+      allTags.clear();
 
-            // 2. Encontrar o último scan (para data e CVEs atuais)
-            let lastScanDate = "-";
-            let currentCVEs = 0;
+      targetsSnap.forEach((docSnap) => {
+        const tData = docSnap.data();
 
-            if (totalScans > 0) {
-                // Ordenar por data (mais recente primeiro)
-                relevantScans.sort((a, b) => {
-                    const dateA = a.submitted_at?.seconds ? a.submitted_at.seconds : (a.submitted_at || 0);
-                    const dateB = b.submitted_at?.seconds ? b.submitted_at.seconds : (b.submitted_at || 0);
-                    return dateB - dateA;
-                });
+        // --- LÓGICA DE ESTATÍSTICA ---
+        // Encontrar scans que correspondem a este target (pelo campo 'value' == 'target')
+        const relevantScans = allScans.filter(scan => scan.target === tData.value);
 
-                const latest = relevantScans[0];
-                
-                // Definir data do último scan
-                if (latest.submitted_at) {
-                    lastScanDate = latest.submitted_at;
-                }
+        // 1. Quantidade de Scans
+        const totalScans = relevantScans.length;
 
-                // Definir CVEs do último scan (assumindo que está em summary.vulnerabilities_total)
-                if (latest.summary && typeof latest.summary.vulnerabilities_total !== 'undefined') {
-                    currentCVEs = latest.summary.vulnerabilities_total;
-                }
-            }
+        // 2. Encontrar o último scan (para data e CVEs atuais)
+        let lastScanDate = "-";
+        let currentCVEs = 0;
 
-            // Construir objeto final
-            const target = {
-                id: docSnap.id, 
-                name: tData.name,
-                value: tData.value,
-                kind: tData.kind || (tData.value.includes('/') ? 'network' : 'host'),
-                addedAt: tData.added_at || Date.now(),
-                user_id: tData.user_id,
-                tags: tData.tags || [],
-                
-                // Dados calculados dinamicamente
-                scans: totalScans,
-                cves: currentCVEs,
-                lastScan: lastScanDate
-            };
+        if (totalScans > 0) {
+          // Ordenar por data (mais recente primeiro)
+          relevantScans.sort((a, b) => {
+            const dateA = a.submitted_at?.seconds ? a.submitted_at.seconds : (a.submitted_at || 0);
+            const dateB = b.submitted_at?.seconds ? b.submitted_at.seconds : (b.submitted_at || 0);
+            return dateB - dateA;
+          });
 
-            state.targets.push(target);
-            
-            if (target.tags && Array.isArray(target.tags)) {
-                target.tags.forEach(t => allTags.add(t));
-            }
-        });
+          const latest = relevantScans[0];
 
-        renderTargets();
-        renderTagsFilter();
+          // Definir data do último scan
+          if (latest.submitted_at) {
+            lastScanDate = latest.submitted_at;
+          }
+
+          // Definir CVEs do último scan (assumindo que está em summary.vulnerabilities_total)
+          if (latest.summary && typeof latest.summary.vulnerabilities_total !== 'undefined') {
+            currentCVEs = latest.summary.vulnerabilities_total;
+          }
+        }
+
+        // Construir objeto final
+        const target = {
+          id: docSnap.id,
+          name: tData.name,
+          value: tData.value,
+          kind: tData.kind || (tData.value.includes('/') ? 'network' : 'host'),
+          addedAt: tData.added_at || Date.now(),
+          user_id: tData.user_id,
+          tags: tData.tags || [],
+
+          // Dados calculados dinamicamente
+          scans: totalScans,
+          cves: currentCVEs,
+          lastScan: lastScanDate
+        };
+
+        state.targets.push(target);
+
+        if (target.tags && Array.isArray(target.tags)) {
+          target.tags.forEach(t => allTags.add(t));
+        }
+      });
+
+      renderTargets();
+      renderTagsFilter();
     } catch (error) {
-        console.error("Erro ao carregar dados:", error);
+      console.error("Erro ao carregar dados:", error);
     }
   }
 
   // 2. ADICIONAR (CREATE)
   async function addTargetToFirestore(targetData) {
-      if (!requireAuth()) return false;
-      const user = await ensureFirebaseUser();
-      if (!user) return false;
+    if (!requireAuth()) return false;
+    const user = await ensureFirebaseUser();
+    if (!user) return false;
 
-      try {
-          await addDoc(collection(db, "Targets"), {
-              name: targetData.name,
-              value: targetData.value,
-              kind: targetData.kind,
-              user_id: user.uid,
-              added_at: Date.now(),
-              tags: targetData.tags || []
-              // Nota: não precisamos salvar scans/cves aqui, pois são calculados dinamicamente
-          });
-          await loadTargets(); 
-          return true;
-      } catch (e) {
-          console.error("Erro ao salvar:", e);
-          alert("Erro ao conectar com a base de dados.");
-          return false;
-      }
+    try {
+      await addDoc(collection(db, "Targets"), {
+        name: targetData.name,
+        value: targetData.value,
+        kind: targetData.kind,
+        user_id: user.uid,
+        added_at: Date.now(),
+        tags: targetData.tags || []
+        // Nota: não precisamos salvar scans/cves aqui, pois são calculados dinamicamente
+      });
+      await loadTargets();
+      return true;
+    } catch (e) {
+      console.error("Erro ao salvar:", e);
+      alert("Erro ao conectar com a base de dados.");
+      return false;
+    }
   }
 
   // 3. EDITAR (UPDATE)
   async function updateTargetInFirestore(id, updatedData) {
-      if (!requireAuth()) return;
-      await ensureFirebaseUser();
+    if (!requireAuth()) return;
+    await ensureFirebaseUser();
 
-      try {
-          const targetRef = doc(db, "Targets", id);
-          await updateDoc(targetRef, updatedData);
-          await loadTargets();
-      } catch (e) { console.error("Erro ao atualizar:", e); }
+    try {
+      const targetRef = doc(db, "Targets", id);
+      await updateDoc(targetRef, updatedData);
+      await loadTargets();
+    } catch (e) { console.error("Erro ao atualizar:", e); }
   }
 
   // 4. APAGAR (DELETE)
   async function deleteTargetFromFirestore(id) {
-      if (!requireAuth()) return;
-      await ensureFirebaseUser();
+    if (!requireAuth()) return;
+    await ensureFirebaseUser();
 
-      if (!confirm("Delete this target?")) return;
-      try {
-          await deleteDoc(doc(db, "Targets", id));
-          state.targets = state.targets.filter(t => t.id !== id);
-          renderTargets();
-      } catch (e) { console.error("Erro ao apagar:", e); }
+    if (!confirm("Delete this target?")) return;
+    try {
+      await deleteDoc(doc(db, "Targets", id));
+      state.targets = state.targets.filter(t => t.id !== id);
+      renderTargets();
+    } catch (e) { console.error("Erro ao apagar:", e); }
   }
 
   // 5. BATCH DELETE
   async function batchDeleteFirestore(ids) {
-      if (!requireAuth()) return;
-      await ensureFirebaseUser();
-      if (!ids.length) return;
-      if (!confirm(`Delete ${ids.length} selected target(s)?`)) return;
+    if (!requireAuth()) return;
+    await ensureFirebaseUser();
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected target(s)?`)) return;
 
-      const batch = writeBatch(db);
-      ids.forEach(id => {
-          const ref = doc(db, "Targets", id);
-          batch.delete(ref);
-      });
+    const batch = writeBatch(db);
+    ids.forEach(id => {
+      const ref = doc(db, "Targets", id);
+      batch.delete(ref);
+    });
 
-      try {
-          await batch.commit();
-          await loadTargets();
-          const allChk = document.getElementById("tgt-checkall");
-          if (allChk) allChk.checked = false;
-      } catch (e) { console.error("Batch delete error:", e); }
+    try {
+      await batch.commit();
+      await loadTargets();
+      const allChk = document.getElementById("tgt-checkall");
+      if (allChk) allChk.checked = false;
+    } catch (e) { console.error("Batch delete error:", e); }
   }
 
   // 6. TAGS UPDATE
   async function updateTagsFirestore(ids, newTags) {
-      if (!requireAuth()) return;
-      await ensureFirebaseUser();
+    if (!requireAuth()) return;
+    await ensureFirebaseUser();
 
-      const batch = writeBatch(db);
-      ids.forEach(id => {
-          const t = state.targets.find(x => x.id === id);
-          if (!t) return;
-          const mergedTags = Array.from(new Set([...(t.tags || []), ...newTags]));
-          const ref = doc(db, "Targets", id);
-          batch.update(ref, { tags: mergedTags });
-      });
+    const batch = writeBatch(db);
+    ids.forEach(id => {
+      const t = state.targets.find(x => x.id === id);
+      if (!t) return;
+      const mergedTags = Array.from(new Set([...(t.tags || []), ...newTags]));
+      const ref = doc(db, "Targets", id);
+      batch.update(ref, { tags: mergedTags });
+    });
 
-      try {
-          await batch.commit();
-          await loadTargets();
-      } catch (e) { console.error("Tags update error:", e); }
+    try {
+      await batch.commit();
+      await loadTargets();
+    } catch (e) { console.error("Tags update error:", e); }
   }
 
   /* ====== VALIDATION ====== */
@@ -338,26 +338,26 @@ const auth = getAuth(app);
         return (b.addedAt || 0) - (a.addedAt || 0);
       });
 
-      if(count) count.textContent = `${list.length} saved`;
-      if(empty) empty.style.display = state.targets.length ? "none" : "block";
+      if (count) count.textContent = `${list.length} saved`;
+      if (empty) empty.style.display = state.targets.length ? "none" : "block";
 
       wrap.innerHTML = "";
       list.forEach(t => {
         const riskClass = getRiskColor(t.cves || 0);
-        
+
         // Data de adição
         const dateObj = new Date(t.addedAt);
-        const addedStr = !isNaN(dateObj) ? dateObj.toISOString().slice(0,10) : '-';
-        
+        const addedStr = !isNaN(dateObj) ? dateObj.toISOString().slice(0, 10) : '-';
+
         // Data do último scan (formatada com dia e hora)
         const lastScanStr = formatDateNice(t.lastScan);
 
         let vulnChips = "";
         // Se quiseres mostrar badges de risco (opcional, requer lógica adicional no objeto t)
         if (t.cves > 0) {
-             vulnChips = `<span class="chip ${riskClass}" title="Total Vulnerabilities">${t.cves} CVEs</span>`;
+          vulnChips = `<span class="chip ${riskClass}" title="Total Vulnerabilities">${t.cves} CVEs</span>`;
         } else {
-             vulnChips = `<span class="chip chip-green">0 CVEs</span>`;
+          vulnChips = `<span class="chip chip-green">0 CVEs</span>`;
         }
 
         const art = document.createElement("article");
@@ -414,7 +414,7 @@ const auth = getAuth(app);
       const n = selectedTargetIds().length;
       const el = document.getElementById("tgt-selected");
       if (el) el.textContent = `${n} selected`;
-    } catch(e){ console.error(e); }
+    } catch (e) { console.error(e); }
   }
 
   /* ====== CSV IMPORT ====== */
@@ -429,7 +429,7 @@ const auth = getAuth(app);
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (!lines.length) { alert("CSV vazio."); return; }
 
-        const headerCols = lines[0].split(',').map(s=>s.trim().toLowerCase());
+        const headerCols = lines[0].split(',').map(s => s.trim().toLowerCase());
         const start = (headerCols.includes('name') && headerCols.includes('value')) ? 1 : 0;
 
         const batch = writeBatch(db);
@@ -439,25 +439,25 @@ const auth = getAuth(app);
 
         for (let i = start; i < lines.length; i++) {
           const cols = lines[i].split(',').map(c => c.trim());
-          const name = cols[0] || `Imported #${i+1}`;
+          const name = cols[0] || `Imported #${i + 1}`;
           const value = cols[1] || '';
           const tagsRaw = cols[2] || '';
 
-          if (!value) { skipped.push({line: i+1, reason: 'empty'}); continue; }
-          if (!isValidHostOrIPorCIDR(value)) { skipped.push({line: i+1, reason: 'invalid IP'}); continue; }
-          if (existingValues.has(value.toLowerCase())) { skipped.push({line: i+1, reason: 'duplicate'}); continue; }
+          if (!value) { skipped.push({ line: i + 1, reason: 'empty' }); continue; }
+          if (!isValidHostOrIPorCIDR(value)) { skipped.push({ line: i + 1, reason: 'invalid IP' }); continue; }
+          if (existingValues.has(value.toLowerCase())) { skipped.push({ line: i + 1, reason: 'duplicate' }); continue; }
 
           const kind = value.includes('/') ? 'network' : 'host';
           const tags = tagsRaw ? tagsRaw.split(/[;,]+/).map(t => t.trim()).filter(Boolean) : [];
 
           const newRef = doc(collection(db, "Targets"));
           batch.set(newRef, {
-              name, value, kind,
-              user_id: user.uid,
-              added_at: Date.now(),
-              tags
+            name, value, kind,
+            user_id: user.uid,
+            added_at: Date.now(),
+            tags
           });
-          
+
           existingValues.add(value.toLowerCase());
           count++;
         }
@@ -487,14 +487,14 @@ const auth = getAuth(app);
       const nameInput = document.getElementById("iplist-name");
       const kindInput = document.getElementById("iplist-kind");
       const valueInput = document.getElementById("iplist-value");
-      
+
       if (!modal || !form) return;
 
       title.textContent = "Edit Target";
       nameInput.value = target.name || '';
       kindInput.value = target.kind || 'host';
       valueInput.value = target.value || '';
-      
+
       form.dataset.mode = "edit";
       form.dataset.targetId = target.id;
 
@@ -507,7 +507,7 @@ const auth = getAuth(app);
     const div = document.createElement('div');
     div.id = 'bulk-tag-modal';
     div.className = 'modal';
-    div.setAttribute('aria-hidden','true');
+    div.setAttribute('aria-hidden', 'true');
     div.style.zIndex = 1200;
     div.innerHTML = `
       <div class="backdrop" data-close></div>
@@ -528,23 +528,23 @@ const auth = getAuth(app);
 
     div.addEventListener('click', (e) => {
       if (e.target.hasAttribute('data-close') || e.target.classList.contains('close') || e.target.classList.contains('backdrop')) {
-        div.setAttribute('aria-hidden','true');
+        div.setAttribute('aria-hidden', 'true');
       }
     });
 
-    div.querySelector('#bulk-tag-apply')?.addEventListener('click', ()=> {
+    div.querySelector('#bulk-tag-apply')?.addEventListener('click', () => {
       const raw = (document.getElementById('bulk-tag-input')?.value || '').trim();
       const tags = raw.split(/[;,]+/).map(t => t.trim()).filter(Boolean);
       const ids = selectedTargetIds();
       if (!tags.length || !ids.length) return;
 
       updateTagsFirestore(ids, tags).then(() => {
-          div.setAttribute('aria-hidden','true');
+        div.setAttribute('aria-hidden', 'true');
       });
     });
   }
 
-  function attachIf(el, event, cb) { try { if (!el) return false; el.addEventListener(event, cb); return true; } catch(e){ console.error('attachIf', e); return false; } }
+  function attachIf(el, event, cb) { try { if (!el) return false; el.addEventListener(event, cb); return true; } catch (e) { console.error('attachIf', e); return false; } }
 
   function init() {
     try {
@@ -573,22 +573,22 @@ const auth = getAuth(app);
       const userBtn = document.getElementById("btn-user");
       const userMenu = document.getElementById("menu-user");
       if (userBtn && userMenu) {
-        attachIf(userBtn, 'click', (e)=> {
+        attachIf(userBtn, 'click', (e) => {
           e.stopPropagation();
           const isOpen = userMenu.getAttribute("aria-hidden") === "false";
           userBtn.setAttribute("aria-expanded", !isOpen);
           userMenu.setAttribute("aria-hidden", isOpen ? "true" : "false");
         });
-        document.addEventListener("click", ()=> userMenu.setAttribute("aria-hidden", "true"));
+        document.addEventListener("click", () => userMenu.setAttribute("aria-hidden", "true"));
       }
 
-      attachIf(document.getElementById('btn-premium'), 'click', (e)=> {
+      attachIf(document.getElementById('btn-premium'), 'click', (e) => {
         e.stopPropagation();
-        document.getElementById('modal-premium')?.setAttribute('aria-hidden','false');
+        document.getElementById('modal-premium')?.setAttribute('aria-hidden', 'false');
       });
-      attachIf(document.getElementById('modal-premium'), 'click', (e)=> {
+      attachIf(document.getElementById('modal-premium'), 'click', (e) => {
         if (e.target.hasAttribute('data-close') || e.target.classList.contains('backdrop')) {
-          e.currentTarget.setAttribute('aria-hidden','true');
+          e.currentTarget.setAttribute('aria-hidden', 'true');
         }
       });
 
@@ -598,25 +598,25 @@ const auth = getAuth(app);
       const iplistForm = document.getElementById("iplist-form");
 
       if (btnOpenAdd && iplistModal && iplistForm) {
-        attachIf(btnOpenAdd, 'click', ()=> {
+        attachIf(btnOpenAdd, 'click', () => {
           document.getElementById("iplist-modal-title").textContent = "Add Target";
           iplistForm.reset();
           iplistForm.dataset.mode = "create";
           delete iplistForm.dataset.targetId;
-          iplistModal.setAttribute("aria-hidden","false");
+          iplistModal.setAttribute("aria-hidden", "false");
         });
-        attachIf(iplistModal, 'click', (e)=> {
+        attachIf(iplistModal, 'click', (e) => {
           if (e.target.hasAttribute("data-close") || e.target.classList.contains("iplist-backdrop")) {
-            iplistModal.setAttribute("aria-hidden","true");
+            iplistModal.setAttribute("aria-hidden", "true");
           }
         });
       }
 
       // --- FORM SUBMIT (Create/Update) ---
       if (iplistForm) {
-        attachIf(iplistForm, 'submit', async (e)=> {
+        attachIf(iplistForm, 'submit', async (e) => {
           e.preventDefault();
-          if (!requireAuth()) return; 
+          if (!requireAuth()) return;
 
           try {
             const name = (document.getElementById("iplist-name")?.value || '').trim();
@@ -625,23 +625,23 @@ const auth = getAuth(app);
 
             if (!name) { alert("Please enter a Name."); return; }
             if (!isValidHostOrIPorCIDR(value)) { alert("Invalid Host/IP."); return; }
-            
+
             if (iplistForm.dataset.mode !== "edit") {
-                if (state.targets.some(t => (t.value || '').toLowerCase() === value.toLowerCase())) { 
-                    alert('Target already exists.'); return; 
-                }
+              if (state.targets.some(t => (t.value || '').toLowerCase() === value.toLowerCase())) {
+                alert('Target already exists.'); return;
+              }
             }
 
             if (iplistForm.dataset.mode === "edit") {
-                const id = iplistForm.dataset.targetId;
-                await updateTargetInFirestore(id, { name, kind, value });
+              const id = iplistForm.dataset.targetId;
+              await updateTargetInFirestore(id, { name, kind, value });
             } else {
-                await addTargetToFirestore({ name, kind, value });
+              await addTargetToFirestore({ name, kind, value });
             }
 
             iplistForm.reset();
-            iplistModal && iplistModal.setAttribute("aria-hidden","true");
-          } catch(err) { console.error('form submit', err); }
+            iplistModal && iplistModal.setAttribute("aria-hidden", "true");
+          } catch (err) { console.error('form submit', err); }
         });
       }
 
@@ -651,23 +651,23 @@ const auth = getAuth(app);
       attachIf(document.getElementById("tags-filter"), 'change', renderTargets);
 
       // Checkboxes & Bulk
-      attachIf(document.getElementById("tgt-checkall"), 'change', (e)=> {
+      attachIf(document.getElementById("tgt-checkall"), 'change', (e) => {
         qsa('#targets-list input[type="checkbox"]').forEach(c => c.checked = e.target.checked);
         updateBulkCount();
       });
-      attachIf(document.getElementById("targets-list"), 'change', (e)=> {
+      attachIf(document.getElementById("targets-list"), 'change', (e) => {
         if (e.target && e.target.type === "checkbox") updateBulkCount();
       });
-      attachIf(document.getElementById("tgt-bulk-delete"), 'click', ()=> {
+      attachIf(document.getElementById("tgt-bulk-delete"), 'click', () => {
         batchDeleteFirestore(selectedTargetIds());
       });
-      attachIf(document.getElementById("tgt-bulk-tags"), 'click', ()=> {
+      attachIf(document.getElementById("tgt-bulk-tags"), 'click', () => {
         const ids = selectedTargetIds();
         if (!ids.length) { alert('No targets selected.'); return; }
         document.getElementById('bulk-tag-input') && (document.getElementById('bulk-tag-input').value = '');
-        document.getElementById('bulk-tag-modal') && document.getElementById('bulk-tag-modal').setAttribute('aria-hidden','false');
+        document.getElementById('bulk-tag-modal') && document.getElementById('bulk-tag-modal').setAttribute('aria-hidden', 'false');
       });
-      attachIf(document.getElementById("tgt-bulk-scan"), 'click', ()=> {
+      attachIf(document.getElementById("tgt-bulk-scan"), 'click', () => {
         const ids = selectedTargetIds();
         if (!ids.length) return;
         if (ids.length === 1) {
@@ -688,22 +688,22 @@ const auth = getAuth(app);
         csvInput.id = "csv-upload-input";
         document.body.appendChild(csvInput);
       }
-      attachIf(document.getElementById("iplist-import-csv"), 'click', ()=> csvInput.click());
+      attachIf(document.getElementById("iplist-import-csv"), 'click', () => csvInput.click());
       attachIf(csvInput, 'change', (e) => {
         if (e.target.files[0]) handleCSVImport(e.target.files[0]);
         e.target.value = "";
       });
 
       // Lista Actions
-      attachIf(document.getElementById("view-iplist"), 'click', (e)=> {
+      attachIf(document.getElementById("view-iplist"), 'click', (e) => {
         const btn = e.target.closest("button[data-action]");
         const chip = e.target.closest('.chip-tag');
-        
+
         if (chip && chip.dataset.tag) {
-             const tag = chip.dataset.tag;
-             const tagSel = document.getElementById('tags-filter');
-             if (tagSel) { tagSel.value = tag; renderTargets(); }
-             return;
+          const tag = chip.dataset.tag;
+          const tagSel = document.getElementById('tags-filter');
+          if (tagSel) { tagSel.value = tag; renderTargets(); }
+          return;
         }
 
         if (!btn) return;
@@ -715,24 +715,29 @@ const auth = getAuth(app);
         if (act === "delete") deleteTargetFromFirestore(id);
         if (act === "edit") openEditModal(target);
         if (act === "tags") {
-            const current = prompt("Enter tags (comma-separated):", (target.tags || []).join(", ")) || "";
-            const tags = current.split(/[;,]+/).map(t => t.trim()).filter(Boolean);
-            if (tags.length) updateTagsFirestore([id], tags);
+          const current = prompt("Enter tags (comma-separated):", (target.tags || []).join(", ")) || "";
+          const tags = current.split(/[;,]+/).map(t => t.trim()).filter(Boolean);
+          if (tags.length) updateTagsFirestore([id], tags);
         }
-        if (act === "start-scan" || act === "view-scans") { 
-            window.location.href = `scans.html?target=${encodeURIComponent(target.value)}&id=${target.id}`; 
+        if (act === "view-scans") {
+          window.location.href = `scans.html?target=${encodeURIComponent(target.value)}`;
+        }
+
+        // Ação: Começar novo scan (Leva target, id e flag action=start)
+        if (act === "start-scan") {
+          window.location.href = `scans.html?target=${encodeURIComponent(target.value)}&id=${target.id}&action=start`;
         }
       });
 
       // Logout
       attachIf(document.getElementById('menu-user'), 'click', (e) => {
-          const item = e.target.closest(".menu-item");
-          if (item && item.dataset.action === "logout") {
-             auth.signOut().then(() => {
-                 localStorage.removeItem('vulnerai.auth');
-                 window.location.href = "login.html";
-             });
-          }
+        const item = e.target.closest(".menu-item");
+        if (item && item.dataset.action === "logout") {
+          auth.signOut().then(() => {
+            localStorage.removeItem('vulnerai.auth');
+            window.location.href = "login.html";
+          });
+        }
       });
 
     } catch (e) {
@@ -760,7 +765,7 @@ if (window.location.pathname.includes('scans.html') || window.location.pathname.
           for (const sel of selectors) {
             const btn = document.querySelector(sel);
             if (btn && !btn.disabled) {
-              setTimeout(() => btn.click(), 300); 
+              setTimeout(() => btn.click(), 300);
               return true;
             }
           }
