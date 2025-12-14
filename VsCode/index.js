@@ -1,4 +1,4 @@
-/* index.js — Firebase Integrated (Complete with UI Polish) */
+/* index.js — Firebase Integrated (Complete & Fixed) */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { 
@@ -81,10 +81,9 @@ function parseDate(val) {
     return new Date(val).getTime(); 
 }
 
-/* ---- storage helpers (Keeping these for non-scan related features like scheduling/activity if needed locally) ---- */
+/* ---- storage helpers ---- */
 function loadTargets(){ try { return JSON.parse(localStorage.getItem(STORAGE_TARGETS_KEY) || '[]'); } catch { return []; } }
 function saveTargets(list){ localStorage.setItem(STORAGE_TARGETS_KEY, JSON.stringify(list || [])); events.emit('targets:updated', list); }
-// Scans are now loaded from Firebase, but keeping save/load as fallback or for demo data
 function loadScansLocal(){ try { return JSON.parse(localStorage.getItem(STORAGE_SCANS_KEY) || '[]'); } catch { return []; } }
 function saveScansLocal(list){ localStorage.setItem(STORAGE_SCANS_KEY, JSON.stringify(list || [])); events.emit('scans:updated', list); }
 function loadSchedules(){ try { return JSON.parse(localStorage.getItem(STORAGE_SCHEDULES_KEY) || '[]'); } catch { return []; } }
@@ -145,19 +144,17 @@ async function loadDashboardData() {
             state.scans.push(scan);
 
             // --- KPI LOGIC ---
-            // Networks = Quick Scans
             if (data.scan_type === 'quick_scan') {
                 state.stats.networks++;
             }
-            // Hosts = Deep Scans
             if (data.scan_type === 'deep_scan') {
                 state.stats.hosts++;
             }
-            // Total = scans
+            // Total = Soma
             state.stats.total = state.stats.networks + state.stats.hosts;
         });
 
-        // Find Last Scan (based on finished_at)
+        // Find Last Scan
         const finishedScans = state.scans.filter(s => s._finishedAt > 0);
         finishedScans.sort((a, b) => b._finishedAt - a._finishedAt);
 
@@ -330,7 +327,6 @@ function renderRecentScans(){
   if(!body) return;
 
   // 1. FILTRAR: Apenas scans terminados (ignora 'ongoing')
-  // Aceita 'complete', 'completed', 'failed', 'timeout', etc.
   const finishedScans = state.scans.filter(s => s.status !== 'ongoing');
 
   // 2. ORDENAR: Pela data de fim (mais recente primeiro)
@@ -344,7 +340,6 @@ function renderRecentScans(){
   if(recent.length === 0){
     if(table) table.style.display = 'none';
     if(noNote) noNote.style.display = 'block';
-    // Se não houver scans terminados, ajusta a mensagem
     noNote.textContent = "No finished scans yet."; 
     return;
   }
@@ -370,14 +365,14 @@ function renderRecentScans(){
     dot.style.display = 'inline-block'; dot.style.width='10px'; dot.style.height='10px'; dot.style.borderRadius='50%'; dot.style.marginRight='8px';
     
     let statusText = s.status;
+    let color = '#ef4444'; // Red (fail)
     if(s.status === 'complete' || s.status === 'completed') { 
-        dot.style.background = '#22c55e'; 
+        color = '#22c55e'; // Green
         statusText = 'Completed'; 
-    } else { 
-        // Failed, Timeout, etc.
-        dot.style.background = '#ef4444'; 
-        statusText = 'Failed'; 
+    } else {
+        statusText = 'Failed';
     }
+    dot.style.background = color;
     
     tStatus.appendChild(dot);
     tStatus.appendChild(document.createTextNode(statusText));
@@ -389,14 +384,13 @@ function renderRecentScans(){
 
     // Date (Tempo desde que acabou)
     const tDate = document.createElement('td'); 
-    // Como filtramos apenas os acabados, usamos sempre _finishedAt
     tDate.textContent = timeAgo(s._finishedAt);
 
     // Actions
     const tAction = document.createElement('td');
     const btnV = document.createElement('button');
     btnV.className = 'btn btn-secondary small'; btnV.textContent = 'View';
-    btnV.addEventListener('click', ()=> window.location.href = `scans.html?target=${encodeURIComponent(s.target)}`);
+    btnV.addEventListener('click', ()=> window.location.href = `scans.html?scanId=${s.id}`);
     tAction.appendChild(btnV);
 
     tr.append(tTarget, tType, tStatus, tFind, tDate, tAction);
@@ -468,27 +462,18 @@ function wireDashboardUI(){
   const btnImport = document.getElementById('btn-import-ips');
   const btnStart = document.getElementById('btn-start-scan');
 
-if(btnAdd) btnAdd.addEventListener('click', (e)=> { 
+  if(btnAdd) btnAdd.addEventListener('click', (e)=> { 
     e.preventDefault(); 
     // Redireciona com instrução para abrir modal
     window.location.href = 'iplist.html?action=add'; 
-});
+  });
   if(btnImport) btnImport.addEventListener('click', (e)=> { e.preventDefault(); showImportIPsModal(); });
 
   // dropdown for start scan
   if(btnStart){
     btnStart.addEventListener('click', (e) => {
-      const dd = document.getElementById('newscan-dropdown');
-      if(dd) dd.style.display = (dd.style.display === 'block' ? 'none' : 'block');
-    });
-  }
-  const dd = document.getElementById('newscan-dropdown');
-  if(dd){
-    dd.querySelectorAll('button[data-scan]').forEach(b => {
-      b.addEventListener('click', (ev) => {
-        // Redirect to scans.html with action=new to open modal
-        window.location.href = 'scans.html?action=new';
-      });
+      // MUDANÇA: Redirecionar diretamente sem abrir dropdown
+      window.location.href = 'scans.html?action=new';
     });
   }
 
@@ -508,6 +493,42 @@ if(btnAdd) btnAdd.addEventListener('click', (e)=> {
   });
 }
 
+// === CORREÇÃO DA NAVEGAÇÃO DO SIDEBAR ===
+// Esta função garante que os links funcionam mesmo que o HTML não tenha hrefs corretos
+function wireSidebarNavigation() {
+    // Liga os botões da barra lateral
+    const links = [
+        { text: 'home', url: 'index.html' },
+        { text: 'scans', url: 'scans.html' },
+        { text: 'ip list', url: 'iplist.html' }
+    ];
+
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            // Se já tiver href, deixa o comportamento normal
+            if (item.getAttribute('href') && item.getAttribute('href') !== '#') return;
+            
+            // Senão, forçamos a navegação pelo texto
+            const text = item.textContent.trim().toLowerCase();
+            const target = links.find(l => text.includes(l.text));
+            if (target) {
+                e.preventDefault();
+                window.location.href = target.url;
+            }
+        });
+    });
+    
+    // Botão grande "New Scan" na sidebar
+    const btnNew = document.getElementById('sidebar-new-scan');
+    if(btnNew) {
+        btnNew.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.href = 'scans.html?action=new';
+        });
+    }
+}
+
 /* ========================
    INIT
    ======================== */
@@ -521,8 +542,11 @@ function init() {
   // 1. Inject HTML
   injectDashboard();
   wireDashboardUI();
+  
+  // 2. Setup Sidebar Navigation (NOVO)
+  wireSidebarNavigation();
 
-  // 2. Load Data (Firebase)
+  // 3. Load Data (Firebase)
   loadDashboardData();
 
   /* SIDEBAR */
@@ -550,7 +574,15 @@ function init() {
   userMenu?.addEventListener("click", (e) => {
     const item = e.target.closest(".menu-item");
     if (!item) return;
-    if (item.dataset.action === "logout") {
+    
+    // CORREÇÃO SETTINGS & LOGOUT
+    const action = item.dataset.action;
+    
+    if (action === "settings") {
+        window.location.href = "settings.html";
+    }
+    
+    if (action === "logout") {
         auth.signOut().then(() => {
             localStorage.removeItem(AUTH_KEY);
             window.location.href = "login.html";
@@ -565,6 +597,21 @@ function init() {
     localStorage.setItem('vulnerai.intent', 'upgrade');
     window.location.href = 'pricing.html';
   });
+
+  // CORREÇÃO DO BOTÃO PREMIUM
+  const premiumBtn = document.getElementById('btn-premium');
+  const premiumModal = document.getElementById('modal-premium');
+  if (premiumBtn && premiumModal) {
+      premiumBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); // Impede que o clique feche outros menus
+          premiumModal.setAttribute('aria-hidden', 'false');
+      });
+      premiumModal.addEventListener('click', (e) => {
+          if (e.target.hasAttribute('data-close') || e.target.classList.contains('backdrop')) {
+              premiumModal.setAttribute('aria-hidden', 'true');
+          }
+      });
+  }
 }
 
 /* BOOT */

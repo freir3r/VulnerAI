@@ -1732,40 +1732,46 @@ function checkUrlForTarget() {
 }
 
 /* ====== AUTO-OPEN NEW SCAN MODAL ====== */
+/* ====== AUTO-OPEN NEW SCAN MODAL ====== */
 function checkUrlForAutoStart() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const action = urlParams.get('action');
-  const target = urlParams.get('target');
-  const targetId = urlParams.get('id');
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action'); // pode ser 'start' ou 'new'
+    const target = urlParams.get('target');
+    const targetId = urlParams.get('id');
 
-  // Se a ação for 'start' e tivermos um target
-  if (action === 'start' && target) {
-    console.log(`[Auto-Start] Preparing scan for: ${target}`);
+    // Verifica se a ação é para iniciar scan (vindo do Dashboard ou IP List)
+    if (action === 'start' || action === 'new') {
+        console.log(`[Auto-Start] Opening new scan modal...`);
+        
+        // 1. Abrir o modal imediatamente
+        showNewScanModal();
 
-    // 1. Abrir o modal
-    showNewScanModal();
+        // 2. Se trouxer dados (vindo do IP List), preencher o formulário
+        if (target || targetId) {
+            setTimeout(() => {
+                const targetInput = document.getElementById("ns-target");
+                const chooseSelect = document.getElementById("ns-choose");
+                const nameInput = document.getElementById("ns-scan-name");
+                
+                // Preencher input manual
+                if (targetInput && target) {
+                    targetInput.value = target;
+                    // Sugerir nome se vier do IP List
+                    if(nameInput) nameInput.value = `Scan of ${target}`;
+                }
 
-    // 2. Preencher o formulário (pequeno delay para garantir que o modal abriu)
-    setTimeout(() => {
-      const targetInput = document.getElementById("ns-target");
-      const chooseSelect = document.getElementById("ns-choose");
-
-      // Preencher input manual
-      if (targetInput) {
-        targetInput.value = target;
-        // Disparar evento de input para ativar o botão 'Start'
-        targetInput.dispatchEvent(new Event('input'));
-      }
-
-      // Tentar selecionar no dropdown se tivermos ID (opcional, mas fica bonito)
-      if (targetId && chooseSelect) {
-        chooseSelect.value = targetId;
-      }
-
-      // Atualizar o estado do botão Start
-      updateStartEnabled();
-    }, 100);
-  }
+                // Tentar selecionar no dropdown se tivermos ID
+                if (targetId && chooseSelect) {
+                    chooseSelect.value = targetId;
+                }
+                
+                // Atualizar o estado do botão Start (habilitar se válido)
+                if (typeof updateStartEnabled === 'function') {
+                    updateStartEnabled();
+                }
+            }, 100);
+        }
+    }
 }
 
 /* ====== INIT ====== */
@@ -2405,16 +2411,15 @@ async function init() {
       }
     };
 
-    // Render the AI assessment with new data structure
+// Render the AI assessment with new data structure
     // ... [rest of the HTML rendering code remains the same]
     aiContainer.innerHTML = `
-    <div class="ai-section">
-      <div class="section-header">
-        <h2>🤖 AI Security Assessment</h2>
-        <span class="muted">Powered by AI heuristics analysis</span>
+    <div class="ai-section" style="border: 1px solid var(--border); background: #fff; border-radius: var(--radius); padding: 25px; box-shadow: var(--shadow);">
+      <div class="section-header" style="border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px;">
+        <h2 style="margin: 0; color: var(--ink); font-size: 18px;"> AI Security Assessment</h2>
+        <span style="color: var(--muted); font-size: 0.9em;">Powered by AI heuristics analysis</span>
       </div>
       
-      <!-- Overall Risk Summary -->
       <div class="ai-risk-summary" style="
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2422,61 +2427,63 @@ async function init() {
         margin-bottom: 25px;
         padding: 20px;
         background: var(--bg);
-        border-radius: 8px;
+        border-radius: var(--radius);
         border: 1px solid var(--border);
       ">
         <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Overall Risk</span>
-          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: ${getRiskColor(overallRisk)};">
+          <span class="risk-label" style="font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px;">Overall Risk</span>
+          <span class="risk-value" style="font-size: 1.6em; font-weight: 800; color: ${getRiskColor(overallRisk)};">
             ${overallRisk.toUpperCase()}
           </span>
         </div>
         
-        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Risk Score</span>
-          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: var(--ink);">
-            ${overallRiskScore}/100
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center; border-left: 1px solid var(--border);">
+          <span class="risk-label" style="font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px;">Risk Score</span>
+          <span class="risk-value" style="font-size: 1.6em; font-weight: 800; color: var(--ink);">
+            ${overallRiskScore}<span style="font-size: 0.5em; color: var(--muted); font-weight: 600;">/100</span>
           </span>
         </div>
         
-        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">CVEs Analyzed</span>
-          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: var(--ink);">
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center; border-left: 1px solid var(--border);">
+          <span class="risk-label" style="font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px;">CVEs Analyzed</span>
+          <span class="risk-value" style="font-size: 1.6em; font-weight: 800; color: var(--ink);">
             ${totalCVEs}
           </span>
         </div>
         
-        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Critical Issues</span>
-          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: #dc3545;">
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center; border-left: 1px solid var(--border);">
+          <span class="risk-label" style="font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px;">Critical Issues</span>
+          <span class="risk-value" style="font-size: 1.6em; font-weight: 800; color: #ef4444;">
             ${criticalFindings}
           </span>
         </div>
       </div>
       
-      <!-- Executive Summary -->
       ${executiveSummary.top_concerns ? `
         <div class="executive-summary" style="
           margin-bottom: 25px;
-          padding: 20px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 8px;
-          color: white;
+          padding: 24px;
+          background: var(--ink); /* Dark theme from CSS */
+          border-radius: var(--radius);
+          color: #fff;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.15);
         ">
-          <h3 style="color: white; margin-bottom: 15px;">📋 Executive Summary</h3>
-          <div style="line-height: 1.6; margin-bottom: 15px;">
-            Overall risk level: <strong>${overallRisk.toUpperCase()}</strong> (Score: ${overallRiskScore}/100)<br>
+          <h3 style="color: #fff; margin: 0 0 15px 0; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+            <span style="color: var(--primary);">★</span> Executive Summary
+          </h3>
+          <div style="line-height: 1.6; margin-bottom: 15px; color: rgba(255,255,255,0.9);">
+            Overall risk level: <strong style="color: var(--primary);">${overallRisk.toUpperCase()}</strong> (Score: ${overallRiskScore}/100)<br>
             Analyzed ${totalCVEs} CVEs across ${enhancedHosts.length} host(s)
           </div>
           
           ${executiveSummary.top_concerns && executiveSummary.top_concerns.length > 0 ? `
-            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
-              <h4 style="color: white; margin-bottom: 10px;">🔍 Top Security Concerns:</h4>
-              <ul style="margin: 0; padding-left: 20px; color: rgba(255,255,255,0.9);">
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.15);">
+              <h4 style="color: rgba(255,255,255,0.7); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">Top Security Concerns:</h4>
+              <ul style="margin: 0; padding-left: 20px; color: #fff;">
                 ${executiveSummary.top_concerns.map(concern => `
-                  <li>
+                  <li style="margin-bottom: 6px;">
                     <strong>${concern.cve}</strong> on ${concern.affected_host} 
-                    (Risk score: ${concern.risk_score || 'N/A'})
+                    <span style="opacity: 0.7; font-size: 0.9em;">(Risk score: ${concern.risk_score || 'N/A'})</span>
                   </li>
                 `).join('')}
               </ul>
@@ -2485,16 +2492,15 @@ async function init() {
         </div>
       ` : ''}
       
-      <!-- Risk Distribution -->
-      <div class="risk-distribution" style="margin-bottom: 25px;">
-        <h3 style="margin-bottom: 10px; color: var(--ink);">Risk Distribution</h3>
-        <div style="display: flex; height: 24px; border-radius: 12px; overflow: hidden; margin-bottom: 10px;">
-          ${criticalFindings > 0 ? `<div style="flex: ${criticalFindings}; background: #dc3545;" title="${criticalFindings} Critical"></div>` : ''}
-          ${highRiskFindings > 0 ? `<div style="flex: ${highRiskFindings}; background: #fd7e14;" title="${highRiskFindings} High"></div>` : ''}
-          ${mediumRiskFindings > 0 ? `<div style="flex: ${mediumRiskFindings}; background: #ffc107;" title="${mediumRiskFindings} Medium"></div>` : ''}
-          ${lowRiskFindings > 0 ? `<div style="flex: ${lowRiskFindings}; background: #198754;" title="${lowRiskFindings} Low"></div>` : ''}
+      <div class="risk-distribution" style="margin-bottom: 30px;">
+        <h3 style="margin-bottom: 12px; font-size: 15px; color: var(--ink);">Risk Distribution</h3>
+        <div style="display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 12px; background: var(--border);">
+          ${criticalFindings > 0 ? `<div style="flex: ${criticalFindings}; background: #ef4444;" title="${criticalFindings} Critical"></div>` : ''}
+          ${highRiskFindings > 0 ? `<div style="flex: ${highRiskFindings}; background: #c0392b;" title="${highRiskFindings} High"></div>` : ''}
+          ${mediumRiskFindings > 0 ? `<div style="flex: ${mediumRiskFindings}; background: #f59e0b;" title="${mediumRiskFindings} Medium"></div>` : ''}
+          ${lowRiskFindings > 0 ? `<div style="flex: ${lowRiskFindings}; background: #10b981;" title="${lowRiskFindings} Low"></div>` : ''}
           ${totalCVEs - (criticalFindings + highRiskFindings + mediumRiskFindings + lowRiskFindings) > 0 ?
-        `<div style="flex: ${totalCVEs - (criticalFindings + highRiskFindings + mediumRiskFindings + lowRiskFindings)}; background: #0dcaf0;" title="Info"></div>` : ''}
+        `<div style="flex: ${totalCVEs - (criticalFindings + highRiskFindings + mediumRiskFindings + lowRiskFindings)}; background: var(--muted);" title="Info"></div>` : ''}
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: var(--muted);">
           <span>${generateSummary()}</span>
@@ -2502,7 +2508,6 @@ async function init() {
         </div>
       </div>
       
-      <!-- Top CVEs Section -->
       ${topCVEs.length > 0 ? `
         <div class="cves-section" style="margin-bottom: 25px;">
           <h3 style="
@@ -2510,11 +2515,13 @@ async function init() {
             margin-bottom: 15px;
             padding-bottom: 8px;
             border-bottom: 2px solid var(--primary);
+            display: inline-block;
+            font-size: 16px;
           ">
-            🔥 Top Security Vulnerabilities (${Math.min(topCVEs.length, 10)})
+             Top Security Vulnerabilities (${Math.min(topCVEs.length, 10)})
           </h3>
           
-          <div class="cves-list" style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="cves-list" style="display: flex; flex-direction: column; gap: 16px;">
             ${topCVEs.slice(0, 10).map((cve, index) => {
           const severity = getCVEUrgency(cve);
           const cvssScore = getCVSSScore(cve);
@@ -2525,57 +2532,75 @@ async function init() {
 
           return `
                 <div class="cve-card" style="
-                  padding: 15px;
-                  border-radius: 8px;
-                  border-left: 4px solid ${getRiskColor(severity)};
-                  background: ${getRiskColor(severity)}15;
-                  transition: transform 0.2s ease;
+                  padding: 20px;
+                  border-radius: 12px;
+                  border: 1px solid var(--border);
+                  background: #fff;
+                  transition: all 0.2s ease;
+                  position: relative;
+                  overflow: hidden;
                 ">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: ${getRiskColor(severity)};"></div>
+
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; padding-left: 10px;">
                     <div style="flex: 1;">
-                      <strong style="color: var(--ink); font-size: 1.1em;">${cve.cve_id || cve.id || `CVE-${index + 1}`}</strong>
-                      ${getSeverityBadge(severity)}
-                      ${exploitAvailable ?
+                      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                         <strong style="color: var(--ink); font-size: 1.1em; font-family: 'Courier New', monospace;">${cve.cve_id || cve.id || `CVE-${index + 1}`}</strong>
+                         ${getSeverityBadge(severity)}
+                      </div>
+                      
+                      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        ${exploitAvailable ?
               `<span style="
-                          background: #dc3545;
-                          color: white;
-                          padding: 2px 8px;
-                          border-radius: 10px;
-                          font-size: 0.8em;
-                          font-weight: bold;
-                          margin-left: 8px;
-                        ">EXPLOIT AVAILABLE</span>` : ''}
-                      ${heuristicScore > 0 ? `
-                        <span style="
-                          background: ${getRiskColor(severity)};
-                          color: white;
-                          padding: 2px 8px;
-                          border-radius: 10px;
-                          font-size: 0.8em;
-                          font-weight: bold;
-                          margin-left: 8px;
-                        ">
-                          AI Score: ${heuristicScore}
-                        </span>
-                      ` : ''}
+                            background: #ffebe9;
+                            color: #c02020;
+                            padding: 2px 8px;
+                            border-radius: 6px;
+                            font-size: 0.75em;
+                            font-weight: 700;
+                            border: 1px solid rgba(192, 32, 32, 0.2);
+                          ">EXPLOIT AVAILABLE</span>` : ''}
+                        ${heuristicScore > 0 ? `
+                          <span style="
+                            background: rgba(255, 212, 0, 0.15);
+                            color: #947600;
+                            padding: 2px 8px;
+                            border-radius: 6px;
+                            font-size: 0.75em;
+                            font-weight: 700;
+                            border: 1px solid rgba(255, 212, 0, 0.3);
+                          ">
+                            AI Score: ${heuristicScore}
+                          </span>
+                        ` : ''}
+                      </div>
                     </div>
-                    <span style="font-weight: bold; color: ${getRiskColor(severity)}; white-space: nowrap;">
-                      CVSS: ${cvssScore}
-                    </span>
+                    
+                    <div style="
+                      background: var(--bg);
+                      padding: 6px 12px;
+                      border-radius: 8px;
+                      border: 1px solid var(--border);
+                    ">
+                      <span style="font-weight: 700; color: ${getRiskColor(severity)}; font-size: 1.1em;">
+                        CVSS: ${cvssScore}
+                      </span>
+                    </div>
                   </div>
                   
-                  <div style="color: var(--muted); margin-bottom: 10px; font-size: 0.95em; line-height: 1.5;">
+                  <div style="color: var(--muted); margin-bottom: 15px; padding-left: 10px; font-size: 0.95em; line-height: 1.5;">
                     ${description}
                   </div>
                   
-                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; padding-left: 10px;">
                     ${cve.port ? `
                       <span style="
                         background: var(--bg);
                         padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
+                        border-radius: 6px;
+                        font-size: 0.8em;
                         color: var(--ink);
+                        border: 1px solid var(--border);
                       ">
                         📍 Port ${cve.port}
                       </span>
@@ -2585,9 +2610,10 @@ async function init() {
                       <span style="
                         background: var(--bg);
                         padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
+                        border-radius: 6px;
+                        font-size: 0.8em;
                         color: var(--ink);
+                        border: 1px solid var(--border);
                       ">
                         🔧 ${cve.service}
                       </span>
@@ -2597,9 +2623,10 @@ async function init() {
                       <span style="
                         background: var(--bg);
                         padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
+                        border-radius: 6px;
+                        font-size: 0.8em;
                         color: var(--ink);
+                        border: 1px solid var(--border);
                       ">
                         🖥️ ${cve.host}
                       </span>
@@ -2609,23 +2636,12 @@ async function init() {
                       <span style="
                         background: var(--bg);
                         padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
+                        border-radius: 6px;
+                        font-size: 0.8em;
                         color: var(--ink);
+                        border: 1px solid var(--border);
                       ">
                         📅 ${cve.year}
-                      </span>
-                    ` : ''}
-                    
-                    ${cve.device_type ? `
-                      <span style="
-                        background: var(--bg);
-                        padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
-                        color: var(--ink);
-                      ">
-                        🖧 ${cve.device_type}
                       </span>
                     ` : ''}
                   </div>
@@ -2633,31 +2649,34 @@ async function init() {
                   ${renderAIFactors(cve)}
                   
                   <div style=" 
-                    background: white;
-                    padding: 12px;
-                    border-radius: 6px;
+                    background: var(--bg); /* Using theme bg instead of white */
+                    padding: 16px;
+                    border-radius: 8px;
                     border: 1px solid var(--border);
-                    margin-top: 10px;
+                    margin-top: 12px;
+                    margin-left: 10px;
                   ">
-                    <strong style="color: #198754; display: block; margin-bottom: 5px;">✅ AI Recommendation:</strong>
-                    <div style="margin: 0; font-size: 0.9em; color: var(--ink); line-height: 1.4;">
+                    <strong style="color: #10b981; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 0.9em;">
+                      <span style="background: #10b981; color: white; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px;">✓</span> AI Recommendation
+                    </strong>
+                    <div style="margin: 0; font-size: 0.95em; color: var(--ink); line-height: 1.5;">
                       ${recommendation}
                     </div>
                     
                     ${cve.recommendation?.timeframe ? `
-                      <div style="margin-top: 8px; font-size: 0.85em; color: var(--muted);">
+                      <div style="margin-top: 10px; font-size: 0.85em; color: var(--muted); border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;">
                         <strong>Timeframe:</strong> ${cve.recommendation.timeframe}
                       </div>
                     ` : ''}
                   </div>
                   
                   ${cve.cve_id ? `
-                    <div style="margin-top: 10px; font-size: 0.85em;">
+                    <div style="margin-top: 12px; margin-left: 10px; font-size: 0.85em;">
                       <a href="https://nvd.nist.gov/vuln/detail/${cve.cve_id}" 
                          target="_blank" 
                          rel="noopener noreferrer"
-                         style="color: #0d6efd; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
-                        🔗 View detailed CVE information
+                         class="external-cve-link">
+                         View detailed CVE information
                       </a>
                     </div>
                   ` : ''}
@@ -2671,10 +2690,9 @@ async function init() {
            
 
       
-      <!-- Statistics -->
       <div style="
         margin-top: 20px;
-        padding: 15px;
+        padding: 15px 20px;
         background: var(--bg);
         border-radius: 8px;
         font-size: 0.9em;
@@ -2682,12 +2700,13 @@ async function init() {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        border: 1px solid var(--border);
       ">
         <span>
           AI assessment generated from ${totalCVEs} analyzed CVEs across ${enhancedHosts.length} host(s)
         </span>
-        <button class="btn-secondary small" onclick="exportAIAssessment()">
-          📥 Export Report
+        <button class="btn-secondary small" onclick="exportAIAssessment()" style="padding: 6px 12px; font-size: 0.85em;">
+           Export Report
         </button>
       </div>
     </div>
@@ -2698,7 +2717,7 @@ async function init() {
       document.querySelectorAll('.cve-card, .recommendation-card, .host-card').forEach(card => {
         card.addEventListener('mouseenter', () => {
           card.style.transform = 'translateY(-2px)';
-          card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+          card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.08)';
         });
         card.addEventListener('mouseleave', () => {
           card.style.transform = 'translateY(0)';
@@ -2752,11 +2771,15 @@ async function init() {
     }
     
     .ai-section {
-      background: white;
-      border-radius: 12px;
+      background: #fff;
+      border-radius: var(--radius);
       padding: 25px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-      border: 1px solid #e9ecef;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+      border: 1px solid var(--border);
+    }
+    
+    .cve-card:hover {
+       border-color: #d1d2d6 !important;
     }
     
     .finding-card {
@@ -2772,20 +2795,37 @@ async function init() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 60px;
-      height: 24px;
-      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-weight: 700;
       text-transform: uppercase;
+      font-size: 0.75em;
       letter-spacing: 0.5px;
     }
     
-    .dark .ai-section {
-      background: var(--bg);
-      border-color: var(--border);
+    /* Dark mode overrides for AI section inserted via JS */
+    body.dark .ai-section {
+      background: var(--dark-card);
+      border-color: var(--dark-border);
     }
     
-    .dark .finding-card {
-      background: rgba(255,255,255,0.05);
+    body.dark .cve-card {
+      background: #171b24 !important;
+      border-color: var(--dark-border) !important;
+    }
+    
+    body.dark .executive-summary {
+       background: #000 !important;
+       border: 1px solid #333;
+    }
+
+    body.dark .ai-risk-summary {
+       background: var(--dark-bg) !important;
+       border-color: var(--dark-border) !important;
+    }
+    
+    body.dark .risk-item {
+       border-color: var(--dark-border) !important;
     }
   `;
 
