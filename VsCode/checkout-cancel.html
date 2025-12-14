@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pagamento cancelado — VulnerAI</title>
+
+  <!-- inline quick-init: apply collapsed state to body BEFORE CSS loads to avoid flash -->
+  <script>
+    (function(){
+      try {
+        var collapsed = localStorage.getItem('vulnerai.sidebarCollapsed');
+        if (collapsed === 'true') {
+          document.documentElement.classList.add('sidebar-collapsed-html');
+          window.__vulnerai_sidebar_collapsed = true;
+        } else {
+          window.__vulnerai_sidebar_collapsed = false;
+        }
+      } catch(e){ window.__vulnerai_sidebar_collapsed = false; }
+    })();
+  </script>
+
+  <link href="cancelled.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Topbar -->
+  <header class="topbar" role="banner">
+    <button id="btn-burger" class="icon-btn" aria-label="Toggle menu" title="Toggle menu">
+      <span class="i-burger" aria-hidden="true"></span>
+    </button>
+
+    <div class="brand-row">
+      <a class="brand home-link" href="index.html" title="VulnerAI — Home">
+        <!-- logo colocado no header -->
+        <img class="brand-logo" src="VulnerAI Logo.png" alt="VulnerAI">
+      </a>
+      <!-- Home pill intentionally removed -->
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-premium" class="btn-premium" title="Unlock Premium">★ Unlock Premium</button>
+
+      <div class="user-area">
+        <!-- user icon visível -->
+        <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false" title="User menu">
+          <img src="Icon.png" class="avatar-icon" alt="User">
+          <span class="avatar-caret">▾</span>
+        </button>
+        <div id="menu-user" class="menu" role="menu" aria-hidden="true">
+          <button class="menu-item" id="menu-settings">Settings</button>
+          <button class="menu-item" id="menu-logout">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="layout">
+    <aside id="sidebar" class="sidebar" aria-label="Sidebar">
+      <div class="sidebar-top">
+        <!-- New Scan: eye icon -->
+        <a id="sidebar-new-scan" class="btn-new" href="scans.html" data-tooltip="New Scan">
+          <img class="ico btn-new-ico" src="New Scan Eye.png" alt="New Scan">
+          <span class="btn-label">New Scan</span>
+        </a>
+      </div>
+
+      <div class="sidebar-section">Your Workspace</div>
+
+      <nav class="nav" aria-label="Workspace navigation">
+        <!-- Home: imagem colocada aqui -->
+        <a id="nav-home" class="nav-item active" href="index.html" data-tooltip="Home">
+          <img class="ico" src="Home.png" alt="Home">
+          <span>Home</span>
+        </a>
+      </nav>
+    </aside>
+
+    <main id="main" class="main" role="main">
+      <div class="cancelled-card">
+        <div class="cancel-left">
+          <div class="cancel-head">
+            <div class="icon" aria-hidden>❌</div>
+            <div>
+              <h1 class="title">Pagamento cancelado</h1>
+              <p class="desc" id="desc">
+                Parece que cancelaste o pagamento — não te preocupes, a subscrição não foi criada.
+              </p>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:22px">
+            <button id="btn-retry" class="btn btn-primary">Tentar novamente</button>
+            <button id="btn-pricing" class="btn btn-ghost">Ver planos</button>
+          </div>
+
+          <p class="hint">
+            Se o problema persistir, contacta o suporte em
+            <a href="mailto:support@vulnerai.com">support@vulnerai.com</a>.
+          </p>
+
+          <div class="cancel-faq" style="margin-top:18px">
+            <h3>Sugestões rápidas</h3>
+            <ul>
+              <li><strong>Por que foi cancelado?</strong> — Pode ter sido cancelado manualmente ou a sessão expirou.</li>
+              <li><strong>Consigo retomar?</strong> — Sim. Clica “Tentar novamente” para reiniciar o checkout com o mesmo plano.</li>
+            </ul>
+          </div>
+        </div>
+
+        <aside class="cancel-right">
+          <!-- prettier preview card (replaces the old image preview) -->
+          <div class="preview-card" role="region" aria-label="Checkout preview">
+            <div class="pc-top">
+              <svg class="pc-icon" width="36" height="36" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                      d="M21 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7"/>
+                <rect x="3" y="3" width="18" height="4" rx="1" fill="currentColor" opacity="0.08"></rect>
+                <path d="M7 12h10M7 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+              </svg>
+
+              <div class="pc-meta">
+                <div class="pc-name">Premium</div>
+                <div class="pc-sub">€9.99 / mês</div>
+              </div>
+            </div>
+
+            <div class="pc-bottom">
+              <div class="pc-badge">Popular</div>
+              <a id="btn-pricing-cta" class="pc-link" href="#">Ver todos os planos</a>
+            </div>
+          </div>
+
+          <p class="aside-note">
+            Sessão terminada — podes voltar ao checkout ou escolher outro plano.
+          </p>
+
+        </aside>
+      </div>
+    </main>
+  </div>
+
+ <script>
+(function(){
+
+  /* =========================
+     SIDEBAR: estado inicial
+     ========================= */
+  try {
+    if (window.__vulnerai_sidebar_collapsed) {
+      document.body.classList.add('sidebar-collapsed');
+      document.getElementById('sidebar')?.classList.add('collapsed');
+      document.getElementById('btn-burger')?.classList.add('is-collapsed');
+    }
+  } catch(e){}
+
+  /* =========================
+     ELEMENTOS
+     ========================= */
+  const sidebar   = document.getElementById('sidebar');
+  const btnBurger = document.getElementById('btn-burger');
+  const btnUser   = document.getElementById('btn-user');
+  const menuUser  = document.getElementById('menu-user');
+
+  const btnRetry      = document.getElementById('btn-retry');
+  const btnPricing    = document.getElementById('btn-pricing');
+  const btnPricingCta = document.getElementById('btn-pricing-cta');
+  const btnPremium    = document.getElementById('btn-premium');
+
+  /* =========================
+     SIDEBAR TOGGLE
+     ========================= */
+  btnBurger?.addEventListener('click', () => {
+    const isCollapsed = sidebar.classList.toggle('collapsed');
+    btnBurger.classList.toggle('is-collapsed', isCollapsed);
+    document.body.classList.toggle('sidebar-collapsed', isCollapsed);
+    try {
+      localStorage.setItem('vulnerai.sidebarCollapsed', isCollapsed ? 'true' : 'false');
+    } catch(e){}
+  });
+
+  /* =========================
+     USER MENU
+     ========================= */
+  btnUser?.addEventListener('click', () => {
+    const expanded = btnUser.getAttribute('aria-expanded') === 'true';
+    btnUser.setAttribute('aria-expanded', String(!expanded));
+    menuUser?.setAttribute('aria-hidden', String(expanded));
+  });
+
+  document.addEventListener('click', (ev) => {
+    if (btnUser && menuUser && !btnUser.contains(ev.target) && !menuUser.contains(ev.target)) {
+      btnUser.setAttribute('aria-expanded','false');
+      menuUser.setAttribute('aria-hidden','true');
+    }
+  });
+
+  /* =========================
+     SETTINGS
+     ========================= */
+  document.getElementById('menu-settings')?.addEventListener('click', () => {
+    const returnUrl = location.pathname + location.search;
+    window.location.href =
+      'settings.html?return=' + encodeURIComponent(returnUrl);
+  });
+
+  /* =========================
+     LOGOUT
+     ========================= */
+  document.getElementById('menu-logout')?.addEventListener('click', () => {
+    try { localStorage.removeItem('vulnerai.auth'); } catch(e){}
+    window.location.href = 'login.html';
+  });
+
+  /* =========================
+     BILLING
+     ========================= */
+  function getBilling(){
+    return localStorage.getItem('vulnerai.billing') || 'monthly';
+  }
+
+  /* =========================
+     TENTAR NOVAMENTE → CHECKOUT
+     ========================= */
+  btnRetry?.addEventListener('click', () => {
+    window.location.href =
+      'checkout.html?billing=' + encodeURIComponent(getBilling());
+  });
+
+  /* =========================
+     PRICING
+     ========================= */
+  function goPricing(){
+    window.location.href =
+      'pricing.html?billing=' + encodeURIComponent(getBilling());
+  }
+
+  btnPricing?.addEventListener('click', goPricing);
+  btnPricingCta?.addEventListener('click', (e) => {
+    e.preventDefault();
+    goPricing();
+  });
+
+  /* =========================
+     UNLOCK PREMIUM (POPUP)
+     ========================= */
+  btnPremium?.addEventListener('click', () => {
+    if (typeof window.openPremiumModal === 'function') {
+      window.openPremiumModal();
+      return;
+    }
+    window.dispatchEvent(new Event('open-premium'));
+  });
+
+  /* =========================
+     CANCEL REASON
+     ========================= */
+  try {
+    const reason = new URL(location.href).searchParams.get('reason');
+    if (reason) document.getElementById('desc').textContent = reason;
+  } catch(e){}
+
+})();
+</script>

@@ -1,0 +1,561 @@
+/* cancelled.css - completo (inclui ajustes do header, sidebar e preview-card) */
+
+/* Variables */
+:root{
+  --bg:#f5f5f7;
+  --ink:#1f1f22;
+  --muted:#6f7378;
+  --border:#e4e5e8;
+
+  --top:#585858;
+  --top-text:#fff;
+
+  --side:#3e3e40;
+  --side-2:#2f2f31;
+  --side-text:#e7e7ea;
+  --side-muted:#a8a8ad;
+  --side-active:#dadadd;
+
+  --primary:#ffd400;
+  --accent:#1663ff;
+
+  --topbar-h:64px;
+  --sidebar-wide:208px;
+  --sidebar-narrow:64px;
+}
+
+/* Base */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:"Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  color:var(--ink);
+  background:var(--bg);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+/* Topbar */
+.topbar{
+  height:var(--topbar-h);
+  background:var(--top);
+  color:var(--top-text);
+  display:flex; align-items:center; padding:0 14px; gap:12px; position:sticky; top:0; z-index:60;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+}
+.icon-btn{ width:44px; height:44px; border-radius:8px; border:none; background:transparent; color:#fff; cursor:pointer; display:grid; place-items:center; }
+.icon-btn:hover{ background: rgba(255,255,255,0.04); }
+
+/* Burger lines */
+.i-burger{ width:20px; height:14px; position:relative; display:inline-block; }
+.i-burger, .i-burger::before, .i-burger::after{ height:2px; background:#fff; border-radius:2px; display:block; transition: transform .18s ease, opacity .12s ease; }
+.i-burger::before, .i-burger::after{ content:""; position:absolute; left:0; right:0; }
+.i-burger::before{ top:-5px } .i-burger::after{ top:5px }
+.icon-btn.is-collapsed .i-burger{ background:transparent; }
+.icon-btn.is-collapsed .i-burger::before{ transform: rotate(45deg) translate(1px,1px); top:0; }
+.icon-btn.is-collapsed .i-burger::after{ transform: rotate(-45deg) translate(1px,-1px); top:0; }
+
+/* Brand */
+.brand-row{ display:flex; align-items:center; gap:10px; }
+.brand-logo{
+  height:60px;                   /* ajustado: default um pouco maior */
+  transition:height .14s ease;
+  filter:brightness(0) invert(1) contrast(1.05);
+  display:block;
+}
+
+/* Slightly larger logo when sidebar collapsed */
+body.sidebar-collapsed .brand-logo { height:72px !important; }
+body.sidebar-collapsed #top-home-pill { display:none !important; }
+
+/* Top actions */
+.top-actions{ margin-left:auto; display:flex; gap:10px; align-items:center; }
+.btn-premium{ background:var(--primary); border-radius:8px; padding:8px 12px; border:none; color:#141414; font-weight:700; cursor:pointer; }
+
+/* Avatar / user */
+.user-area{ position:relative; }
+.avatar{ display:flex; align-items:center; gap:8px; cursor:pointer; background:transparent; border:none; }
+.avatar-icon{
+  width:36px !important;
+  height:36px !important;
+  border-radius:50%;
+  object-fit:cover;
+  background:#ffffff;
+  border:2px solid rgba(0,0,0,0.08);
+  box-shadow:0 2px 6px rgba(0,0,0,0.12);
+  display:inline-block;
+}
+
+/* Menu */
+.menu{ position:absolute; right:0; top:56px; background:#fff; color:#111; border-radius:8px; box-shadow:0 12px 30px rgba(10,16,30,0.06); display:none; min-width:160px; padding:6px; border:1px solid var(--border); }
+.menu[aria-hidden="false"]{ display:block; }
+.menu-item{ display:block; background:transparent; border:none; padding:8px 10px; text-align:left; width:100%; font-weight:600; color:#222; cursor:pointer; border-radius:6px; }
+.menu-item:hover{ background:#f4f4f6; }
+
+/* Layout */
+.layout{ display:flex; min-height:calc(100vh - var(--topbar-h)); }
+
+/* Sidebar */
+.sidebar{
+  width:var(--sidebar-wide);
+  min-width:var(--sidebar-wide);
+  background:linear-gradient(180deg,var(--side) 0%, var(--side-2) 100%);
+  color:var(--side-text);
+  padding:12px 10px;
+  display:flex; flex-direction:column; gap:12px;
+  transition: width .22s ease, min-width .22s ease, padding .18s ease;
+  box-shadow: inset -1px 0 0 rgba(0,0,0,0.06);
+  z-index:40;
+}
+
+/* collapsed state */
+.sidebar.collapsed{
+  width:var(--sidebar-narrow);
+  min-width:var(--sidebar-narrow);
+  padding-left:8px;
+  padding-right:6px;
+}
+
+/* Top button: New Scan */
+.sidebar-top{ display:flex; justify-content:center; align-items:center; padding:4px; }
+.btn-new{ display:flex; align-items:center; gap:10px; background:#fff; color:#111; padding:8px 10px; border-radius:10px; text-decoration:none; box-shadow:0 6px 18px rgba(4,8,12,0.06); }
+.btn-new img.ico{ width:28px; height:28px; object-fit:contain; background:#fff; padding:4px; border-radius:8px; }
+.sidebar.collapsed .btn-new{ width:44px; height:44px; padding:6px; border-radius:8px; justify-content:center; }
+.sidebar.collapsed .btn-new .btn-label{ display:none !important; }
+
+/* Section label */
+.sidebar-section{ font-size:12px; text-transform:uppercase; color:var(--side-muted); padding:6px 4px; letter-spacing:.08em; }
+
+/* nav */
+.nav{ display:flex; flex-direction:column; gap:8px; padding-top:6px; }
+.nav-item{ display:flex; align-items:center; gap:10px; padding:10px; border-radius:8px; text-decoration:none; color:var(--side-text); font-weight:700; transition:background .12s ease; position:relative; }
+.nav-item .ico{ width:20px; height:20px; object-fit:contain; background:#fff; padding:4px; border-radius:6px; }
+.nav-item span{ white-space:nowrap; }
+
+/* active */
+.nav-item.active{ background:#616166; color:var(--side-active); }
+
+/* collapsed nav -> icons only */
+.sidebar.collapsed .nav{ align-items:center; gap:12px; padding-top:10px; }
+.sidebar.collapsed .nav-item{ width:44px; height:44px; padding:0; justify-content:center; border-radius:8px; }
+.sidebar.collapsed .nav-item .ico{ width:28px; height:28px; padding:4px; border-radius:8px; }
+.sidebar.collapsed .nav-item span{ display:none !important; }
+
+/* STRONG: hide any possible leftover text in the sidebar when collapsed */
+body.sidebar-collapsed .sidebar,
+body.sidebar-collapsed .sidebar * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.sidebar-collapsed .sidebar .btn-label,
+body.sidebar-collapsed .sidebar .sidebar-section,
+body.sidebar-collapsed .sidebar .nav-item span,
+body.sidebar-collapsed .sidebar .nav-item .label,
+body.sidebar-collapsed .sidebar .btn-new .label {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Tooltip for collapsed icons */
+.sidebar.collapsed .nav-item[data-tooltip]:hover::after,
+.sidebar.collapsed .btn-new[data-tooltip]:hover::after{
+  content: attr(data-tooltip);
+  position: fixed;
+  left: calc(var(--sidebar-narrow) + 16px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #222; color:#fff; padding:6px 10px; border-radius:6px; white-space:nowrap; box-shadow:0 8px 20px rgba(0,0,0,0.15); z-index:9999;
+}
+
+/* Ensure icons stay visible & crisp */
+.nav-item .ico,
+.btn-new img.ico {
+  opacity: 1 !important;
+  filter: none !important;
+  background: #fff;
+  padding: 4px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(4,8,12,0.06);
+}
+
+/* Slightly larger icon when collapsed */
+.sidebar.collapsed .nav-item .ico,
+.sidebar.collapsed .btn-new img.ico {
+  width: 34px !important;
+  height: 34px !important;
+  padding: 6px !important;
+}
+
+/* main content */
+.main{ flex:1; min-width:0; background:#fff; border-left:1px solid var(--border); padding-bottom:80px; }
+.cancelled-card{ max-width:1100px; margin:28px auto; display:grid; grid-template-columns: 1fr 320px; gap:28px; padding:0 18px; }
+.cancel-left{ background:#fff; border-radius:12px; padding:26px; box-shadow:0 12px 30px rgba(10,16,30,0.06); border:1px solid rgba(11,17,28,0.04); }
+.cancel-head{ display:flex; gap:16px; align-items:center; }
+.icon{ width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#fff; border:1px solid #eee; font-size:28px; }
+.title{ margin:0 0 4px 0; font-size:20px; font-weight:800; color:#111; }
+.desc{ margin:0; color:var(--muted); }
+.actions{ display:flex; gap:12px; margin-top:18px; }
+.btn{ padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer; border:0; }
+.btn-primary{ background:var(--accent); color:#fff; }
+.btn-ghost{ background:#f0f0f3; color:#222; }
+.hint{ margin-top:14px; color:var(--muted); font-size:13px; }
+.cancel-faq{ margin-top:18px; color:var(--muted); font-size:14px; }
+
+/* cancel-right original (image preview fallback) */
+/* .cancel-right{ display:flex; flex-direction:column; align-items:center; gap:12px; }
+.preview{ max-width:180px; border-radius:10px; box-shadow:0 8px 24px rgba(11,17,28,0.06); }
+.sample-plan{ margin-top:8px; padding:12px; border-radius:10px; border:1px solid rgba(11,17,28,0.04); background:linear-gradient(180deg, rgba(11,99,214,0.03), rgba(11,99,214,0.01)); text-align:center; }
+.plan-price{ color:var(--accent); font-weight:800; margin-top:6px; } */
+
+/* -------------------- NEW: preview-card styles (prettier checkout preview) -------------------- */
+.preview-card{
+  width:100%;
+  max-width:260px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  border-radius:12px;
+  padding:14px;
+  border:1px solid rgba(11,17,28,0.04);
+  box-shadow: 0 8px 30px rgba(10,16,30,0.06);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  align-items:stretch;
+}
+
+/* top row: icon + meta */
+.preview-card .pc-top{
+  display:flex; gap:12px; align-items:center;
+}
+.preview-card .pc-icon{
+  color: #0b63d6;
+  width:36px; height:36px;
+  flex:0 0 36px;
+  border-radius:8px;
+  padding:6px;
+  background: linear-gradient(180deg, rgba(11,99,214,0.06), rgba(11,99,214,0.02));
+  box-shadow:0 6px 18px rgba(11,99,214,0.06);
+}
+.preview-card .pc-meta{ display:flex; flex-direction:column; gap:2px; }
+.preview-card .pc-name{ font-weight:800; color: #111; font-size:14px; }
+.preview-card .pc-sub{ font-weight:900; color: var(--accent); font-size:15px; margin-top:2px; }
+
+/* bottom row: badge + link */
+.preview-card .pc-bottom{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; }
+.preview-card .pc-badge{
+  background: linear-gradient(180deg, rgba(255,220,0,0.14), rgba(255,220,0,0.06));
+  color: #6b4d00;
+  padding:6px 8px;
+  font-weight:700;
+  border-radius:8px;
+  font-size:12px;
+  border:1px solid rgba(255,200,0,0.06);
+}
+.preview-card .pc-link{
+  font-size:13px;
+  text-decoration:underline;
+  color:#4a2fb2;
+  font-weight:700;
+  align-self:flex-end;
+}
+
+/* small aside note under preview card */
+.aside-note{ color:var(--muted); font-size:13px; text-align:center; margin-top:6px; }
+
+/* -------------------- END preview-card styles -------------------- */
+
+/* Responsive */
+@media (max-width:980px){
+  .sidebar{ width:var(--sidebar-narrow); min-width:var(--sidebar-narrow); }
+  .nav-item span, .sidebar-section, .btn-new .btn-label, .home-pill{ display:none; }
+  .cancelled-card{ grid-template-columns: 1fr; padding:12px; }
+  .brand-logo{ height:44px; }
+  .brand-logo{ transition: none; } /* evita tremidos no mobile */
+}
+
+/* extra small devices */
+@media (max-width:520px){
+  .brand-logo{ height:40px !important; }
+  body.sidebar-collapsed .brand-logo{ height:48px !important; }
+  .preview-card{ max-width:100%; padding:12px; }
+}
+
+/* Accessibility / focus states */
+.icon-btn:focus, .btn:focus, .nav-item:focus, .menu-item:focus { outline: 3px solid rgba(20,120,255,0.12); outline-offset:2px; }
+
+/* fallback to ensure avatar visible if src missing */
+.avatar img[alt="User"]{
+  display:inline-block;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  object-fit:cover;
+}
+
+
+/* ===== ICON & LOGO VISIBILITY FIXES (add to the end of cancelled.css) ===== */
+
+/* Force images to render as block, keep aspect ratio and be visible on dark sidebar */
+.sidebar .ico,
+.sidebar .btn-new img,
+.avatar-icon,
+.brand-logo {
+  display: block;
+  object-fit: contain;
+  -o-object-fit: contain;
+}
+
+/* Sidebar icons: make them visible with a light card and subtle border */
+.nav-item .ico,
+.sidebar-top .ico {
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  background: #ffffff;            /* white background so white glyphs are visible */
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(2,6,12,0.12);
+  border: 1px solid rgba(0,0,0,0.06);
+  display: inline-block;
+}
+
+/* Slightly larger New Scan icon container (left sidebar top) */
+.btn-new img.ico {
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+}
+
+/* When collapsed: show only the icon but keep the same visual tile */
+.sidebar.collapsed .nav-item,
+.sidebar.collapsed .btn-new {
+  width:44px;
+  height:44px;
+  padding:6px;
+  align-items:center;
+  justify-content:center;
+}
+
+/* Avatar (user icon in header) */
+.avatar-icon {
+  width:36px;
+  height:36px;
+  padding:4px;
+  background:#fff;
+  border-radius:50%;
+  border:1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 6px 14px rgba(2,6,12,0.08);
+  object-fit:cover;
+}
+
+/* Brand logo sizing (header) - tuned to be noticeable but not huge */
+.brand-logo {
+  height:48px;            /* start size */
+  width:auto;
+  transition: height .12s ease;
+  filter: none;           /* remove invert/brightness if logo is already white/dark */
+  margin-left:6px;
+}
+
+/* When the sidebar is collapsed we slightly increase the logo so it remains visible */
+body.sidebar-collapsed .brand-logo {
+  height:56px !important;
+}
+
+/* Preview card icons/text spacing (keeps the new preview design intact) */
+.preview-card,
+.sample-plan {
+  display:block;
+}
+
+/* Ensure image files do not get hidden by ancestor rules */
+.sidebar img,
+.topbar img,
+.avatar img {
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: transparent;
+}
+
+/* Small responsive tweak so icons don't overflow on small screens */
+@media (max-width:980px){
+  .nav-item .ico,
+  .btn-new img.ico,
+  .avatar-icon { width:36px; height:36px; padding:5px; }
+  .brand-logo { height:44px; }
+}
+
+/* ===== FIX: Bigger VulnerAI logo in the top header ===== */
+
+/* Normal state logo size */
+.brand-logo {
+  height: 64px !important;   /* antes 48px */
+  width: auto;
+  margin-left: 6px;
+  object-fit: contain;
+}
+
+/* When sidebar is collapsed → slightly larger */
+body.sidebar-collapsed .brand-logo {
+  height: 92px !important;   /* antes 56px */
+}
+
+/* On mobile, reduce just a bit */
+@media (max-width: 980px) {
+  .brand-logo {
+    height: 56px !important;
+  }
+  body.sidebar-collapsed .brand-logo {
+    height: 64px !important;
+  }
+}
+
+
+/* ===== Brand logo: bigger + animation (paste at end of home.css) ===== */
+
+/* tune these values se quiseres maior/menor */
+:root{
+  --brand-logo-default: 96px;   /* tamanho normal do logo (aumentei) */
+  --brand-logo-collapsed: 110px;/* tamanho quando sidebar collapsed */
+  --brand-logo-mobile: 56px;    /* mobile */
+}
+
+/* animated pop + subtle float */
+@keyframes logo-pop {
+  0%   { transform: translateY(-8px) scale(.92); opacity: 0; }
+  60%  { transform: translateY(4px) scale(1.03); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes logo-float {
+  0%   { transform: translateY(0) }
+  100% { transform: translateY(-6px) }
+}
+
+/* apply bigger logo + animations */
+.brand-logo{
+  height: var(--brand-logo-default) !important;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  transition: height .18s ease, transform .2s ease;
+  /* play a quick pop on load, then a slow float after 0.5s */
+  animation:
+    logo-pop .48s cubic-bezier(.2,.9,.25,1) both,
+    logo-float 6s ease-in-out .6s infinite alternate;
+  will-change: transform, opacity;
+  /* ensure no unwanted filter from other rules */
+  filter: none !important;
+}
+
+/* when sidebar is collapsed, make logo a bit larger for emphasis */
+body.sidebar-collapsed .brand-logo{
+  height: var(--brand-logo-collapsed) !important;
+  transform-origin: center left;
+  /* subtle extra pop when toggled */
+  animation:
+    logo-pop .36s cubic-bezier(.2,.9,.25,1),
+    logo-float 6s ease-in-out .8s infinite alternate;
+}
+
+/* hover/tap micro-interaction */
+.brand-logo:hover,
+.brand-row:focus-within .brand-logo{
+  transform: translateY(-2px) scale(1.01);
+  transition: transform .12s ease;
+}
+
+/* responsive: reduce size on small screens */
+@media (max-width:980px){
+  .brand-logo { height: var(--brand-logo-mobile) !important; animation: logo-pop .4s ease both; }
+  body.sidebar-collapsed .brand-logo { height: 64px !important; }
+}
+
+/* Accessibility: if user prefers reduced motion, disable float */
+@media (prefers-reduced-motion: reduce) {
+  .brand-logo { animation: logo-pop .3s ease both; }
+  body.sidebar-collapsed .brand-logo { animation: logo-pop .3s ease both; }
+}
+/* ===== Sidebar open/close animation ===== */
+
+/* Transition variables */
+:root{
+  --sidebar-wide: 208px;
+  --sidebar-narrow: 64px;
+  --sidebar-ease: cubic-bezier(.2,.9,.25,1);
+  --sidebar-duration: 420ms;
+}
+
+/* ensure the sidebar uses transform for smoother GPU animation */
+.sidebar{
+  width:var(--sidebar-wide);
+  min-width:var(--sidebar-wide);
+  transition:
+    transform var(--sidebar-duration) var(--sidebar-ease),
+    width var(--sidebar-duration) var(--sidebar-ease),
+    box-shadow 220ms ease;
+  will-change: transform, width;
+  transform-origin: left center;
+}
+
+/* collapsed state uses translateX + smaller width to create sliding + shrinking effect */
+.sidebar.collapsed{
+  width:var(--sidebar-narrow) !important;
+  min-width:var(--sidebar-narrow) !important;
+  transform: translateX(calc(-1 * (var(--sidebar-wide) - var(--sidebar-narrow)))) scaleX(.999);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+}
+
+/* smooth reveal for sidebar children (icons/text) */
+.sidebar .nav-item,
+.sidebar .sidebar-section,
+.sidebar .btn-new,
+.sidebar .sidebar-top {
+  transition: opacity 300ms linear var(--sidebar-duration), transform 380ms var(--sidebar-ease);
+  transform-origin: left center;
+}
+
+/* when collapsing, fade out labels & slide them left */
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .sidebar-section,
+.sidebar.collapsed .btn-new span {
+  opacity:0;
+  transform: translateX(-8px);
+  pointer-events:none;
+}
+
+/* when expanded, ensure labels are visible and slide in */
+.sidebar .nav-item span,
+.sidebar .sidebar-section,
+.sidebar .btn-new span {
+  opacity:1;
+  transform: translateX(0);
+}
+
+/* subtle stagger using transition-delay for nicer feel */
+.sidebar .nav-item span{ transition-delay: 0ms; }
+.sidebar .nav-item:nth-child(2) span{ transition-delay: 20ms; }
+.sidebar .nav-item:nth-child(3) span{ transition-delay: 40ms; }
+
+/* burger micro-animation (extra) */
+.icon-btn { transition: transform 220ms var(--sidebar-ease), background .12s ease; }
+.icon-btn:hover { transform: translateY(-2px) }
+
+/* overlay shadow on main area when collapsed toggles for nicer depth */
+body.sidebar-collapsed .main { transition: margin-left var(--sidebar-duration) var(--sidebar-ease); }
+
+/* optional: animate brand-row shift slightly when collapsed/expanded */
+.brand-row { transition: transform var(--sidebar-duration) var(--sidebar-ease); }
+body.sidebar-collapsed .brand-row { transform: translateX(6px) }
+
+/* Make sure the logo pop replay (JS triggers a class) has its own style */
+.brand-logo.replay {
+  animation:
+    logo-pop .36s cubic-bezier(.2,.9,.25,1) both,
+    logo-float 6s ease-in-out .8s infinite alternate;
+}
+
