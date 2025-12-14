@@ -81,7 +81,7 @@
         <div class="dialog">
           <button class="close" data-close aria-label="Close">×</button>
           <h2>New Scan</h2>
-          
+
           <form id="newscan-form" novalidate>
 
             <!-- Normal Scan Target Section -->
@@ -160,7 +160,15 @@
         <div id="scan-results-content" style="display: none;">
           <!-- Header Section -->
           <div class="scan-header">
+            
             <h1>Scan Results</h1>
+            <div class="ai-actions">
+              <button id="btn-ai-assessment" class="btn-ai">
+                <span class="ai-icon">💡</span>
+                <span class="ai-text">AI Assessment</span>
+                <span class="ai-sparkle"></span>
+              </button>
+            </div>
             <div class="scan-meta-grid">
               <div class="meta-group">
                 <div class="meta-label">Target</div>
@@ -191,8 +199,8 @@
                 <div class="gauge-svg">
                   <svg viewBox="0 0 120 60">
                     <path class="g-track" d="M 10,50 A 50,50 0 0 1 110,50" />
-                    <path id="g-bar" class="g-bar" d="M 10,50 A 50,50 0 0 1 110,50" 
-                          stroke-dasharray="0 157" stroke-dashoffset="0" />
+                    <path id="g-bar" class="g-bar" d="M 10,50 A 50,50 0 0 1 110,50" stroke-dasharray="0 157"
+                      stroke-dashoffset="0" />
                   </svg>
                 </div>
                 <div class="summary-number" id="sr-ports-text">3/50</div>
@@ -225,7 +233,7 @@
                   <button class="btn-secondary" id="btn-show-history-results">Show History</button>
                   <button class="btn-secondary" id="scan-refresh">Refresh</button>
                   <button class="btn-secondary" id="btn-clear-trivial">Clear Low & Trivial (CVSS < 4)</button>
-                  <button class="btn-secondary" id="btn-export-csv">Export CSV</button>
+                      <button class="btn-secondary" id="btn-export-csv">Export CSV</button>
                 </div>
               </div>
               <div id="vuln-table-container">
@@ -246,7 +254,8 @@
 
           <!-- Filters -->
           <div class="history-filters upgraded-filters" style="margin-bottom: 20px;">
-            <input type="text" id="history-filter-search" class="ns-input" placeholder="Search by target or name..." style="flex: 1;" />
+            <input type="text" id="history-filter-search" class="ns-input" placeholder="Search by target or name..."
+              style="flex: 1;" />
             <select id="history-filter-status" class="input">
               <option value="">All Status</option>
               <option value="ongoing">Ongoing</option>
@@ -298,8 +307,8 @@
     </div>
   </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
   <script src="scans.js"></script>
   <script>

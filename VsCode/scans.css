@@ -41,6 +41,90 @@
   border-color: var(--primary);
 }
 
+.ai-actions {
+  margin-top: 12px;
+}
+
+.btn-ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+
+  color: #2a1c00;
+  background: linear-gradient(135deg,
+      #ffe600,
+      #cccf00,
+      #b0bd00);
+
+  box-shadow:
+    0 0 0 rgba(255, 200, 50, 0),
+    0 8px 20px rgba(255, 190, 0, 0.35);
+
+  transition: all 0.25s ease;
+  overflow: hidden;
+}
+
+.btn-ai:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 12px rgba(255, 215, 100, 0.9),
+    0 12px 28px rgba(255, 190, 0, 0.45);
+}
+
+.btn-ai:active {
+  transform: scale(0.98);
+}
+
+/* Icon */
+.btn-ai .ai-icon {
+  font-size: 18px;
+}
+
+/* Sparkle animation */
+.btn-ai .ai-sparkle {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.6) 50%,
+      transparent 80%);
+  transform: translateX(-100%);
+  animation: sparkle 3.5s infinite;
+}
+
+@keyframes sparkle {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  40% {
+    transform: translateX(120%);
+  }
+
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* Disabled state (while loading) */
+.btn-ai.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.btn-ai.loading .ai-text {
+  content: 'Analyzing...';
+}
+
 .external-cve-link {
   display: inline-flex;
   align-items: center;

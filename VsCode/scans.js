@@ -154,18 +154,18 @@ const pagination = {
     status: '',
     type: ''
   },
-  
+
   applyFilters(scans) {
     const { search, status, type } = this.filters;
     return scans.filter(scan => {
       const matchesSearch = (scan.targetValue.toLowerCase().includes(search.toLowerCase()) ||
-                             (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
+        (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
       const matchesStatus = !status || scan.status === status;
       const matchesType = !type || scan.type === type;
       return matchesSearch && matchesStatus && matchesType;
     });
   },
-  
+
   getPaginatedItems(scans) {
     const filtered = this.applyFilters(scans);
     const start = (this.currentPage - 1) * this.itemsPerPage;
@@ -175,14 +175,14 @@ const pagination = {
       totalPages: Math.ceil(filtered.length / this.itemsPerPage)
     };
   },
-  
+
   renderPagination(totalItems, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
-    
+
     const totalPages = Math.ceil(totalItems / this.itemsPerPage);
     container.innerHTML = '';
-    
+
     // Previous button
     if (this.currentPage > 1) {
       const prevBtn = document.createElement('button');
@@ -194,7 +194,7 @@ const pagination = {
       });
       container.appendChild(prevBtn);
     }
-    
+
     // Page numbers
     for (let i = 1; i <= totalPages; i++) {
       const btn = document.createElement('button');
@@ -207,7 +207,7 @@ const pagination = {
       });
       container.appendChild(btn);
     }
-    
+
     // Next button
     if (this.currentPage < totalPages) {
       const nextBtn = document.createElement('button');
@@ -250,19 +250,19 @@ async function loadScans() {
 
     if (response && response.scans) {
       const convertedScans = response.scans.map(scan => {
-        
+
         // --- CORREÇÃO DA DATA AQUI ---
         // Esta lógica garante que a data funciona sempre
         let startedAt = Date.now();
-        
+
         if (scan.submitted_at) {
-            if (typeof scan.submitted_at === 'string') {
-                // Se vier como texto (ex: "2025-12-13T10:00...")
-                startedAt = new Date(scan.submitted_at).getTime();
-            } else if (scan.submitted_at._seconds) {
-                // Se vier como objeto Firestore { _seconds: ... }
-                startedAt = scan.submitted_at._seconds * 1000;
-            }
+          if (typeof scan.submitted_at === 'string') {
+            // Se vier como texto (ex: "2025-12-13T10:00...")
+            startedAt = new Date(scan.submitted_at).getTime();
+          } else if (scan.submitted_at._seconds) {
+            // Se vier como objeto Firestore { _seconds: ... }
+            startedAt = scan.submitted_at._seconds * 1000;
+          }
         }
         // -----------------------------
 
@@ -272,17 +272,17 @@ async function loadScans() {
           type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
           preset: scan.preset_used || scan.scan_type,
           proto: 'TCP',
-          
+
           startedAt: startedAt, // Data corrigida
-          
+
           status: scan.status === 'complete' ? 'Completed' :
-                  scan.status === 'ongoing' ? 'ongoing' : 'failed',
+            scan.status === 'ongoing' ? 'ongoing' : 'failed',
           apiStatus: scan,
 
           // QUICK SCAN SPECIFIC DATA
           activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
           totalHosts: scan.summary?.total_hosts || 0,
-          openPorts: [], 
+          openPorts: [],
           totalPorts: scan.summary?.open_ports_total || 0,
           deviceTypes: scan.summary?.device_types || [],
           scanDuration: scan.summary?.scan_duration || '',
@@ -295,7 +295,7 @@ async function loadScans() {
           is_network_scan: scan.is_network_scan,
           scan_name: scan.scan_name,
           finished_at: scan.finished_at,
-          scan_mode: 'normal' 
+          scan_mode: 'normal'
         };
       });
 
@@ -628,7 +628,7 @@ function showNewScanModal() {
   const scanTypeSection = document.getElementById('ns-scan-type-section');
   if (targetSection) targetSection.style.display = 'block';
   if (scanTypeSection) scanTypeSection.style.display = 'block';
-  
+
   populateSavedTargetsDropdown();
 }
 
@@ -717,7 +717,7 @@ async function renderScansHistory() {
 
   scansList.style.display = 'grid';
   scansEmpty.style.display = 'none';
-  
+
   // Show pagination
   document.getElementById('history-pagination').style.display = 'flex';
 
@@ -821,10 +821,10 @@ function cvssToSeverity(score) {
 async function addScan({ targetValue, type = "quick", proto = "TCP", scanName = "" }) {
   try {
     const userId = getCurrentUserId();
-    
+
     // Mapeamento simples: se a UI diz "deep", usamos o preset deep_scan, senão quick_scan
     const preset = type === 'deep' ? 'deep_scan' : 'quick_scan';
-    
+
     // Chamada única e simples para a API
     const result = await nmapAPI.startScan(targetValue, preset, userId, scanName);
 
@@ -1089,7 +1089,7 @@ function createModelFromApiStatus(scan) {
 }
 
 function updateScanResultsUI(model) {
- window.currentScanModel = model;
+  window.currentScanModel = model;
 
   // Update header
   document.getElementById("sr-target").textContent = model.targetValue;
@@ -1257,7 +1257,7 @@ function fillPortsTable(host) {
 
   // 🆕 TRY DIFFERENT DATA SOURCES
   let riskData = null;
-  
+
   // Try source 1: Model scanSummary
   if (window.currentScanModel?.scanSummary?.risk_assessment) {
     riskData = window.currentScanModel.scanSummary.risk_assessment;
@@ -1353,45 +1353,45 @@ function fillPortsTable(host) {
         </thead>
         <tbody>
           ${host.ports.map(port => {
-            // Extrair dados da estrutura do Firebase
-            const portNumber = port.port;
-            const service = port.service || {};
-            
-            // Construir nome do serviço com product + version
-            let serviceDisplay = service.name || 'Unknown';
-            if (service.product) {
-              serviceDisplay = service.product;
-              if (service.version) {
-                serviceDisplay += ` ${service.version}`;
-              }
-            }
-            
-            // Status da porta
-            const status = port.state || 'unknown';
-            const statusClass = `status-${status}`;
-            const statusText = status.charAt(0).toUpperCase() + status.slice(1);
-            
-            // Detalhes adicionais
-            const details = [];
-            if (service.extrainfo) details.push(service.extrainfo);
-            if (service.tunnel) details.push(`Tunnel: ${service.tunnel}`);
-            if (service.ostype) details.push(`OS: ${service.ostype}`);
-            
-            const detailsText = details.length > 0 ? details.join(' • ') : '';
+    // Extrair dados da estrutura do Firebase
+    const portNumber = port.port;
+    const service = port.service || {};
 
-            return `
+    // Construir nome do serviço com product + version
+    let serviceDisplay = service.name || 'Unknown';
+    if (service.product) {
+      serviceDisplay = service.product;
+      if (service.version) {
+        serviceDisplay += ` ${service.version}`;
+      }
+    }
+
+    // Status da porta
+    const status = port.state || 'unknown';
+    const statusClass = `status-${status}`;
+    const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
+    // Detalhes adicionais
+    const details = [];
+    if (service.extrainfo) details.push(service.extrainfo);
+    if (service.tunnel) details.push(`Tunnel: ${service.tunnel}`);
+    if (service.ostype) details.push(`OS: ${service.ostype}`);
+
+    const detailsText = details.length > 0 ? details.join(' • ') : '';
+
+    return `
               <tr>
                 <td><strong>${portNumber}</strong></td>
                 <td>
                   <div style="font-weight: 500; color: var(--ink);">${serviceDisplay}</div>
-                  ${service.name && service.name !== serviceDisplay ? 
-                    `<div style="font-size: 0.85em; color: var(--muted); margin-top: 2px;">${service.name}</div>` : ''}
+                  ${service.name && service.name !== serviceDisplay ?
+        `<div style="font-size: 0.85em; color: var(--muted); margin-top: 2px;">${service.name}</div>` : ''}
                 </td>
                 <td><span class="${statusClass}">${statusText}</span></td>
                 <td style="font-size: 0.85em; color: var(--muted); max-width: 200px;">${detailsText}</td>
               </tr>
             `;
-          }).join('')}
+  }).join('')}
         </tbody>
       </table>
     </div>
@@ -1405,9 +1405,9 @@ function fillPortsTable(host) {
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
           ${host.risk_assessment.findings
-            .filter(finding => finding.risk === 'HIGH' || finding.risk === 'CRITICAL')
-            .slice(0, 3) // Mostrar apenas as top 3 críticas
-            .map(finding => `
+        .filter(finding => finding.risk === 'HIGH' || finding.risk === 'CRITICAL')
+        .slice(0, 3) // Mostrar apenas as top 3 críticas
+        .map(finding => `
               <div class="recommendation-item ${finding.risk.toLowerCase()}" style="display: flex; align-items: flex-start; padding: 12px; border-radius: 6px; border-left: 4px solid ${getRiskBorderColor(finding.risk)}; background: ${getRiskBackgroundColor(finding.risk)};">
                 <div class="rec-severity-badge" style="padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; margin-right: 12px; min-width: 60px; text-align: center; background: ${getRiskBadgeColor(finding.risk)}; color: white;">
                   ${finding.risk}
@@ -1429,7 +1429,7 @@ function fillPortsTable(host) {
 }
 // Funções auxiliares para cores baseadas no risco
 function getRiskColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#ffc107';
@@ -1440,7 +1440,7 @@ function getRiskColor(risk) {
 }
 
 function getRiskBorderColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#ffc107';
@@ -1449,7 +1449,7 @@ function getRiskBorderColor(risk) {
 }
 
 function getRiskBackgroundColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#f8d7da';
     case 'high': return '#fff3cd';
     case 'medium': return '#e7f1ff';
@@ -1458,7 +1458,7 @@ function getRiskBackgroundColor(risk) {
 }
 
 function getRiskBadgeColor(risk) {
-  switch(risk.toLowerCase()) {
+  switch (risk.toLowerCase()) {
     case 'critical': return '#dc3545';
     case 'high': return '#fd7e14';
     case 'medium': return '#0d6efd';
@@ -1598,28 +1598,28 @@ function renderDetailedCves(cv) {
         </thead>
         <tbody>
           ${cv.all_cves.map(c => {
-            const cveId = c.cve_id || c.CVE || c.cve || '';
-            const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
-            const externalLink = isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null;
-            
-            return `
+    const cveId = c.cve_id || c.CVE || c.cve || '';
+    const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
+    const externalLink = isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null;
+
+    return `
               <tr>
                 <td><strong>${cveId}</strong></td>
                 <td>${c.host || c.hostname || ''}</td>
-                <td>${(c.CVSS?.score ?? c.CVSS?.score ?? c.CVSS?.score) || (c.CVSS?.score===0?0:'-')}</td>
+                <td>${(c.CVSS?.score ?? c.CVSS?.score ?? c.CVSS?.score) || (c.CVSS?.score === 0 ? 0 : '-')}</td>
                 <td>${c.publishedDate || c.publishedDate || (c.published ? c.published : '') || ''}</td>
                 <td>${c.exploit_available ? 'Yes' : (c.exploit || '-')}</td>
                 <td>
-                  ${externalLink ? 
-                    `<a href="${externalLink}" target="_blank" rel="noopener noreferrer" class="btn-secondary small" style="padding: 4px 12px; font-size: 0.85em;">
+                  ${externalLink ?
+        `<a href="${externalLink}" target="_blank" rel="noopener noreferrer" class="btn-secondary small" style="padding: 4px 12px; font-size: 0.85em;">
                       View Details
-                    </a>` : 
-                    '<span class="muted">N/A</span>'
-                  }
+                    </a>` :
+        '<span class="muted">N/A</span>'
+      }
                 </td>
               </tr>
             `;
-          }).join('')}
+  }).join('')}
         </tbody>
       </table>
     </div>
@@ -1671,7 +1671,7 @@ function handleClearTrivial() {
 function updateStartEnabled() {
   const tos = document.getElementById("ns-tos");
   const startBtn = document.getElementById("ns-start");
-  
+
   // Simplificado para apenas checar input ou dropdown
   const targetInp = document.getElementById("ns-target");
   const chooseSel = document.getElementById("ns-choose");
@@ -1692,7 +1692,7 @@ function exportScanToCSV(scanId) {
     const cveId = cve.id || '';
     const isRealCVE = /^CVE-\d{4}-\d{4,}$/.test(cveId);
     const externalLink = cve.external_link || (isRealCVE ? `https://nvd.nist.gov/vuln/detail/${cveId}` : 'N/A');
-    
+
     csvContent += `${cve.id},${cve.title},${cve.cvss},${cve.severity},"${externalLink}"\n`;
   });
 
@@ -1708,69 +1708,69 @@ function exportScanToCSV(scanId) {
 /* ====== AUTO-FILTER FROM URL ====== */
 /* ====== AUTO-FILTER FROM URL ====== */
 function checkUrlForTarget() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const target = urlParams.get('target');
-    const action = urlParams.get('action');
-    
-    // CORREÇÃO: Se a ação for 'start', NÃO filtramos a lista de histórico.
-    // Assim o utilizador foca-se apenas no modal que vai abrir.
-    if (action === 'start') {
-        return; 
-    }
-    
-    if (target) {
-        console.log(`[Auto-Filter] Found target in URL: ${target}`);
-        
-        // 1. Preencher a barra de pesquisa visualmente
-        const searchInput = document.getElementById('history-filter-search');
-        if (searchInput) {
-            searchInput.value = target;
-        }
+  const urlParams = new URLSearchParams(window.location.search);
+  const target = urlParams.get('target');
+  const action = urlParams.get('action');
 
-        // 2. Atualizar o estado do filtro da paginação
-        pagination.filters.search = target;
-        pagination.currentPage = 1;
-        
-        // 3. Forçar a renderização imediata com o filtro
-        renderScansHistory();
+  // CORREÇÃO: Se a ação for 'start', NÃO filtramos a lista de histórico.
+  // Assim o utilizador foca-se apenas no modal que vai abrir.
+  if (action === 'start') {
+    return;
+  }
+
+  if (target) {
+    console.log(`[Auto-Filter] Found target in URL: ${target}`);
+
+    // 1. Preencher a barra de pesquisa visualmente
+    const searchInput = document.getElementById('history-filter-search');
+    if (searchInput) {
+      searchInput.value = target;
     }
+
+    // 2. Atualizar o estado do filtro da paginação
+    pagination.filters.search = target;
+    pagination.currentPage = 1;
+
+    // 3. Forçar a renderização imediata com o filtro
+    renderScansHistory();
+  }
 }
 
 /* ====== AUTO-OPEN NEW SCAN MODAL ====== */
 function checkUrlForAutoStart() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const action = urlParams.get('action');
-    const target = urlParams.get('target');
-    const targetId = urlParams.get('id');
+  const urlParams = new URLSearchParams(window.location.search);
+  const action = urlParams.get('action');
+  const target = urlParams.get('target');
+  const targetId = urlParams.get('id');
 
-    // Se a ação for 'start' e tivermos um target
-    if (action === 'start' && target) {
-        console.log(`[Auto-Start] Preparing scan for: ${target}`);
-        
-        // 1. Abrir o modal
-        showNewScanModal();
+  // Se a ação for 'start' e tivermos um target
+  if (action === 'start' && target) {
+    console.log(`[Auto-Start] Preparing scan for: ${target}`);
 
-        // 2. Preencher o formulário (pequeno delay para garantir que o modal abriu)
-        setTimeout(() => {
-            const targetInput = document.getElementById("ns-target");
-            const chooseSelect = document.getElementById("ns-choose");
-            
-            // Preencher input manual
-            if (targetInput) {
-                targetInput.value = target;
-                // Disparar evento de input para ativar o botão 'Start'
-                targetInput.dispatchEvent(new Event('input'));
-            }
+    // 1. Abrir o modal
+    showNewScanModal();
 
-            // Tentar selecionar no dropdown se tivermos ID (opcional, mas fica bonito)
-            if (targetId && chooseSelect) {
-                chooseSelect.value = targetId;
-            }
-            
-            // Atualizar o estado do botão Start
-            updateStartEnabled();
-        }, 100);
-    }
+    // 2. Preencher o formulário (pequeno delay para garantir que o modal abriu)
+    setTimeout(() => {
+      const targetInput = document.getElementById("ns-target");
+      const chooseSelect = document.getElementById("ns-choose");
+
+      // Preencher input manual
+      if (targetInput) {
+        targetInput.value = target;
+        // Disparar evento de input para ativar o botão 'Start'
+        targetInput.dispatchEvent(new Event('input'));
+      }
+
+      // Tentar selecionar no dropdown se tivermos ID (opcional, mas fica bonito)
+      if (targetId && chooseSelect) {
+        chooseSelect.value = targetId;
+      }
+
+      // Atualizar o estado do botão Start
+      updateStartEnabled();
+    }, 100);
+  }
 }
 
 /* ====== INIT ====== */
@@ -1950,167 +1950,166 @@ async function init() {
   document.getElementById('btn-show-history')?.addEventListener('click', showScansHistoryView);
   document.getElementById('btn-show-history-results')?.addEventListener('click', showScansHistoryView);
 
-/* SCANS HISTORY ACTIONS */
-document.getElementById('scans-list')?.addEventListener('click', async (e) => {
-  console.log('🎯 [DEBUG] Click event detected on:', e.target);
-  
-  const btn = e.target.closest('button[data-action]');
-  console.log('🔘 [DEBUG] Closest button found:', btn);
-  
-  if (!btn) {
-    console.log('❌ [DEBUG] No button with data-action found');
-    return;
-  }
+  /* SCANS HISTORY ACTIONS */
+  document.getElementById('scans-list')?.addEventListener('click', async (e) => {
+    console.log('🎯 [DEBUG] Click event detected on:', e.target);
 
-  const scanId = btn.dataset.scanId;
-  const action = btn.dataset.action;
-  
-  console.log('📋 [DEBUG] Action:', action, 'Scan ID:', scanId);
+    const btn = e.target.closest('button[data-action]');
+    console.log('🔘 [DEBUG] Closest button found:', btn);
 
-  if (btn.dataset.action === 'view-scan') {
-    console.log('🚀 [DEBUG] Calling viewHistoricalScan...');
-    await viewHistoricalScan(scanId);
-  }
-
-  if (btn.dataset.action === 'rescan') {
-    console.log('🔄 [DEBUG] Calling setupRescan...');
-    await setupRescan(scanId);
-  }
-
-  if (btn.dataset.action === 'export-csv') {
-    console.log('📊 [DEBUG] Calling exportScanToCSV...');
-    exportScanToCSV(scanId);
-  }
-});
-
-// 🆕 NOVA FUNÇÃO: Carregar e mostrar scan histórico completo
-async function viewHistoricalScan(scanId) {
-  try {
-    console.log('📋 Loading historical scan:', scanId);
-    
-    // 1. Mostrar loading screen
-    showActiveScanView();
-    document.getElementById('scan-loading').style.display = 'block';
-    document.getElementById('scan-results-content').style.display = 'none';
-    document.getElementById('loading-target').textContent = 'Loading historical scan results...';
-
-    // 2. Buscar dados COMPLETOS do scan da Firebase
-    const scanDetails = await nmapAPI.getScanStatus(scanId);
-    console.log('📊 Historical scan details:', scanDetails);
-
-    // 3. Processar e mostrar resultados
-    if (scanDetails && scanDetails.scan) {
-      // Criar model completo com os dados da Firebase
-      const model = createModelFromApiResponse(scanDetails);
-      
-      // Esconder loading e mostrar resultados
-      document.getElementById('scan-loading').style.display = 'none';
-      document.getElementById('scan-results-content').style.display = 'block';
-      
-      // Renderizar com dados reais
-      updateScanResultsUI(model);
-      
-      // Atualizar estado local
-      updateLocalScanState(scanId, scanDetails);
-    } else {
-      throw new Error('No scan data found');
-    }
-
-  } catch (error) {
-    console.error('❌ Error loading historical scan:', error);
-    
-    // Fallback: usar dados locais se disponíveis
-    const localScan = state.scans.find(s => s.id === scanId);
-    if (localScan) {
-      document.getElementById('scan-loading').style.display = 'none';
-      document.getElementById('scan-results-content').style.display = 'block';
-      renderScanResultsPage(); // Usa dados locais
-    } else {
-      alert('Error loading scan results. Please try again.');
-      showScansHistoryView();
-    }
-  }
-}
-
-// 🆕 FUNÇÃO AUXILIAR: Atualizar estado local com dados frescos
-function updateLocalScanState(scanId, apiData) {
-  const scanIndex = state.scans.findIndex(s => s.id === scanId);
-  if (scanIndex !== -1) {
-    state.scans[scanIndex].apiStatus = apiData;
-    state.scans[scanIndex].status = 'Completed';
-    
-    // Mover para topo temporariamente para display
-    const [selectedScan] = state.scans.splice(scanIndex, 1);
-    state.scans.unshift(selectedScan);
-    saveScans(state.scans);
-  }
-}
-
-// 🆕 NOVA FUNÇÃO: Configurar rescan (Simplificado)
-async function setupRescan(scanId) {
-  try {
-    // 1. Buscar dados do scan original
-    state.scans = await loadScans();
-    const originalScan = state.scans.find(s => s.id === scanId);
-    
-    if (!originalScan) {
-      alert('Scan not found');
+    if (!btn) {
+      console.log('❌ [DEBUG] No button with data-action found');
       return;
     }
 
-    console.log('🔄 Setting up rescan for:', originalScan);
+    const scanId = btn.dataset.scanId;
+    const action = btn.dataset.action;
 
-    // 2. Mostrar o modal de novo scan
-    showNewScanModal();
+    console.log('📋 [DEBUG] Action:', action, 'Scan ID:', scanId);
 
-    // 3. Pré-preencher os campos baseado no scan original
-    setTimeout(() => {
-      prefillRescanForm(originalScan);
-    }, 100);
+    if (btn.dataset.action === 'view-scan') {
+      console.log('🚀 [DEBUG] Calling viewHistoricalScan...');
+      await viewHistoricalScan(scanId);
+    }
 
-  } catch (error) {
-    console.error('Error setting up rescan:', error);
-    alert('Error setting up rescan');
+    if (btn.dataset.action === 'rescan') {
+      console.log('🔄 [DEBUG] Calling setupRescan...');
+      await setupRescan(scanId);
+    }
+
+    if (btn.dataset.action === 'export-csv') {
+      console.log('📊 [DEBUG] Calling exportScanToCSV...');
+      exportScanToCSV(scanId);
+    }
+  });
+
+  // 🆕 NOVA FUNÇÃO: Carregar e mostrar scan histórico completo
+  async function viewHistoricalScan(scanId) {
+    try {
+      console.log('📋 Loading historical scan:', scanId);
+
+      // 1. Mostrar loading screen
+      showActiveScanView();
+      document.getElementById('scan-loading').style.display = 'block';
+      document.getElementById('scan-results-content').style.display = 'none';
+      document.getElementById('loading-target').textContent = 'Loading historical scan results...';
+
+      // 2. Buscar dados COMPLETOS do scan da Firebase
+      const scanDetails = await nmapAPI.getScanStatus(scanId);
+      console.log('📊 Historical scan details:', scanDetails);
+
+      // 3. Processar e mostrar resultados
+      if (scanDetails && scanDetails.scan) {
+        // Criar model completo com os dados da Firebase
+        const model = createModelFromApiResponse(scanDetails);
+
+        // Esconder loading e mostrar resultados
+        document.getElementById('scan-loading').style.display = 'none';
+        document.getElementById('scan-results-content').style.display = 'block';
+
+        // Renderizar com dados reais
+        updateScanResultsUI(model);
+
+        // Atualizar estado local
+        updateLocalScanState(scanId, scanDetails);
+      } else {
+        throw new Error('No scan data found');
+      }
+
+    } catch (error) {
+      console.error('❌ Error loading historical scan:', error);
+
+      // Fallback: usar dados locais se disponíveis
+      const localScan = state.scans.find(s => s.id === scanId);
+      if (localScan) {
+        document.getElementById('scan-loading').style.display = 'none';
+        document.getElementById('scan-results-content').style.display = 'block';
+        renderScanResultsPage(); // Usa dados locais
+      } else {
+        alert('Error loading scan results. Please try again.');
+        showScansHistoryView();
+      }
+    }
   }
-}
 
-// 🆕 FUNÇÃO: Pré-preencher o formulário (Simplificada para modo único)
-function prefillRescanForm(originalScan) {
-  console.log('📝 Prefilling form with:', originalScan);
+  // 🆕 FUNÇÃO AUXILIAR: Atualizar estado local com dados frescos
+  function updateLocalScanState(scanId, apiData) {
+    const scanIndex = state.scans.findIndex(s => s.id === scanId);
+    if (scanIndex !== -1) {
+      state.scans[scanIndex].apiStatus = apiData;
+      state.scans[scanIndex].status = 'Completed';
 
-  // 1. Scan Name - adicionar "Rescan" ao nome original
-  const scanNameInput = document.getElementById('ns-scan-name');
-  if (scanNameInput) {
-    const originalName = originalScan.scan_name || originalScan.targetValue || 'Scan';
-    scanNameInput.value = `Rescan of ${originalName}`;
+      // Mover para topo temporariamente para display
+      const [selectedScan] = state.scans.splice(scanIndex, 1);
+      state.scans.unshift(selectedScan);
+      saveScans(state.scans);
+    }
   }
 
-  // 2. Target
-  const targetInput = document.getElementById('ns-target');
-  const chooseSelect = document.getElementById('ns-choose');
-  
-  if (targetInput && originalScan.targetValue) {
-    targetInput.value = originalScan.targetValue;
+  // 🆕 NOVA FUNÇÃO: Configurar rescan (Simplificado)
+  async function setupRescan(scanId) {
+    try {
+      // 1. Buscar dados do scan original
+      state.scans = await loadScans();
+      const originalScan = state.scans.find(s => s.id === scanId);
+
+      if (!originalScan) {
+        alert('Scan not found');
+        return;
+      }
+
+      console.log('🔄 Setting up rescan for:', originalScan);
+
+      // 2. Mostrar o modal de novo scan
+      showNewScanModal();
+
+      // 3. Pré-preencher os campos baseado no scan original
+      setTimeout(() => {
+        prefillRescanForm(originalScan);
+      }, 100);
+
+    } catch (error) {
+      console.error('Error setting up rescan:', error);
+      alert('Error setting up rescan');
+    }
   }
-  
-  // Tentar selecionar no dropdown se disponível
-  if (chooseSelect && originalScan.targetId) {
-    chooseSelect.value = originalScan.targetId;
+
+  // 🆕 FUNÇÃO: Pré-preencher o formulário (Simplificada para modo único)
+  function prefillRescanForm(originalScan) {
+    console.log('📝 Prefilling form with:', originalScan);
+
+    // 1. Scan Name - adicionar "Rescan" ao nome original
+    const scanNameInput = document.getElementById('ns-scan-name');
+    if (scanNameInput) {
+      const originalName = originalScan.scan_name || originalScan.targetValue || 'Scan';
+      scanNameInput.value = `Rescan of ${originalName}`;
+    }
+
+    // 2. Target
+    const targetInput = document.getElementById('ns-target');
+    const chooseSelect = document.getElementById('ns-choose');
+
+    if (targetInput && originalScan.targetValue) {
+      targetInput.value = originalScan.targetValue;
+    }
+
+    // Tentar selecionar no dropdown se disponível
+    if (chooseSelect && originalScan.targetId) {
+      chooseSelect.value = originalScan.targetId;
+    }
+
+    // 3. Tipo (Quick/Deep)
+    const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
+    const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
+    if (scanTypeRadio) scanTypeRadio.checked = true;
+
+    // 4. Protocolo
+    const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
+    if (protoRadio) protoRadio.checked = true;
+
+    updateStartEnabled();
   }
 
-  // 3. Tipo (Quick/Deep)
-  const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
-  const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
-  if (scanTypeRadio) scanTypeRadio.checked = true;
-
-  // 4. Protocolo
-  const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
-  if (protoRadio) protoRadio.checked = true;
-
-  updateStartEnabled();
-}
-
-  /* SCANS CONTROLS */
   const btnRefresh = document.getElementById("scan-refresh");
   if (btnRefresh) {
     btnRefresh.addEventListener("click", async (e) => {
@@ -2121,6 +2120,894 @@ function prefillRescanForm(originalScan) {
     });
   }
 
+  const aiBtn = document.getElementById('btn-ai-assessment');
+  if (aiBtn) {
+    aiBtn.addEventListener('click', async () => {
+      const scanId = window.currentScanModel?.apiStatus?.scan?.id ||
+        window.currentScanModel?.apiStatus?.scan?.scanId ||
+        window.currentScanModel?.id;
+
+      if (!scanId) {
+        alert('No scan selected. Please view a scan first.');
+        return;
+      }
+
+      console.log('🤖 Requesting AI Assessment for scan:', scanId);
+
+      aiBtn.classList.add('loading');
+      aiBtn.disabled = true;
+
+      try {
+        // Get token from storage (same as your API client)
+        await refreshTokenIfNeeded();
+        const auth = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+        const token = auth.token;
+
+        if (!token) {
+          throw new Error('No authentication token found. Please log in again.');
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        };
+
+        console.log('📡 Making AI request to:', `/scan/${scanId}/ai-heuristics`);
+
+        const response = await fetch(
+          `http://localhost:3000/scan/${scanId}/ai-heuristics`,
+          {
+            method: 'GET',
+            headers: headers,
+            mode: 'cors' // Explicitly set CORS mode
+          }
+        );
+
+        console.log('📥 AI Response status:', response.status);
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Unauthorized: Please log in again.');
+          }
+          if (response.status === 404) {
+            throw new Error('AI analysis not available for this scan.');
+          }
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ AI Assessment received:', data);
+
+        // Display the AI assessment results
+        displayAIAssessment(data);
+
+      } catch (error) {
+        console.error('❌ AI Assessment error:', error);
+        alert(`AI Assessment failed: ${error.message}`);
+      } finally {
+        aiBtn.classList.remove('loading');
+        aiBtn.disabled = false;
+      }
+    });
+  }
+  /* ====== AI ASSESSMENT DISPLAY ====== */
+
+
+  /* ====== AI ASSESSMENT DISPLAY ====== */
+  /* ====== AI ASSESSMENT DISPLAY ====== */
+  function displayAIAssessment(aiData) {
+    console.log('🎯 Displaying AI Assessment:', aiData);
+
+    // Create or get the AI assessment container
+    let aiContainer = document.getElementById('ai-assessment-container');
+    if (!aiContainer) {
+      aiContainer = document.createElement('div');
+      aiContainer.id = 'ai-assessment-container';
+      aiContainer.className = 'ai-assessment-container';
+
+      // Insert after the risk analysis details or at the end of results
+      const riskDetails = document.getElementById('risk-analysis-details');
+      const detailedCves = document.getElementById('detailed-cves');
+      const parent = riskDetails?.parentNode || detailedCves?.parentNode ||
+        document.querySelector('.scan-results-content') ||
+        document.getElementById('scan-results-content');
+
+      if (parent) {
+        parent.appendChild(aiContainer);
+      }
+    }
+
+    // Clear previous content
+    aiContainer.innerHTML = '';
+
+    // Function to get risk color
+    const getRiskColor = (risk) => {
+      if (!risk) return '#6c757d';
+      const riskLower = risk.toLowerCase();
+      if (riskLower.includes('critical')) return '#dc3545';
+      if (riskLower.includes('high')) return '#fd7e14';
+      if (riskLower.includes('medium') || riskLower.includes('médio')) return '#ffc107';
+      if (riskLower.includes('low')) return '#198754';
+      return '#0dcaf0'; // info
+    };
+
+    // Function to get severity badge HTML
+    const getSeverityBadge = (severity) => {
+      const color = getRiskColor(severity);
+      return `<span class="severity-badge" style="
+      background: ${color};
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.8em;
+      font-weight: bold;
+      display: inline-block;
+      margin-right: 8px;
+    ">${severity?.toUpperCase() || 'UNKNOWN'}</span>`;
+    };
+
+    // Function to get CVE severity from heuristic score
+    const getCVESeverity = (cve) => {
+      const score = cve.heuristic_analysis?.score || cve.cvss_score || cve.cvss || 0;
+      if (score >= 90) return 'CRITICAL';
+      if (score >= 70) return 'HIGH';
+      if (score >= 40) return 'MEDIUM';
+      if (score > 0) return 'LOW';
+      return 'INFO';
+    };
+
+    // Function to get CVSS score
+    const getCVSSScore = (cve) => {
+      return cve.CVSS?.score ||
+        cve.cvss_score ||
+        cve.cvss ||
+        '0.0';
+    };
+    const getCVEUrgency = (cve) => {
+      return cve.recommendation?.urgency ||
+        cve.heuristic_analysis?.urgency ||
+        'MEDIUM';
+    };
+
+    // Fix to display AI analysis factors properly
+    const renderAIFactors = (cve) => {
+      if (!cve.heuristic_analysis?.factors) return '';
+
+      const factors = cve.heuristic_analysis.factors;
+      return `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 6px;">
+        <strong style="color: var(--ink); display: block; margin-bottom: 5px;">AI Analysis Factors:</strong>
+        <div style="font-size: 0.85em; color: var(--muted); display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+          ${Object.entries(factors).map(([key, value]) => {
+        const score = typeof value === 'number' ? value : value?.score || 0;
+        const risk = typeof value === 'object' ? value?.risk || 'N/A' : 'N/A';
+        return `
+              <div style="text-align: center;">
+                <div style="font-weight: bold; color: var(--ink);">${key.replace(/([A-Z])/g, ' $1').toUpperCase()}</div>
+                <div style="color: ${getRiskColor(risk)}; font-size: 1.1em; font-weight: bold;">
+                  ${score}
+                </div>
+              </div>
+            `;
+      }).join('')}
+        </div>
+      </div>
+    `;
+    };
+
+    // Fix to get host summary text
+    const getHostSummaryText = (hostAnalysis) => {
+      if (!hostAnalysis.summary_by_urgency) return 'No summary available';
+
+      const summary = hostAnalysis.summary_by_urgency;
+      if (typeof summary === 'string') return summary;
+
+      // If it's an object, convert to text
+      const parts = [];
+      if (summary.CRITICAL > 0) parts.push(`${summary.CRITICAL} critical`);
+      if (summary.HIGH > 0) parts.push(`${summary.HIGH} high`);
+      if (summary.MEDIUM > 0) parts.push(`${summary.MEDIUM} medium`);
+      if (summary.LOW > 0) parts.push(`${summary.LOW} low`);
+
+      return parts.length > 0
+        ? `Found: ${parts.join(', ')} severity CVEs`
+        : 'No security issues detected';
+    };
+    // Function to safely get CVE description
+    const getCVEDescription = (cve) => {
+      return cve.description ||
+        cve.title ||
+        cve.summary ||
+        'Vulnerability in ' + (cve.service || 'unknown service');
+    };
+
+    // Function to safely get CVE recommendation
+    const getCVERecommendation = (cve) => {
+      if (cve.recommendation) {
+        if (typeof cve.recommendation === 'string') {
+          return cve.recommendation;
+        } else if (cve.recommendation.action_items && Array.isArray(cve.recommendation.action_items)) {
+          return cve.recommendation.action_items.map(item =>
+            item.action || item.description || ''
+          ).filter(item => item).join('<br>');
+        } else if (cve.recommendation.action) {
+          return cve.recommendation.action;
+        }
+      }
+      return 'Apply security patches and follow best practices for ' + (cve.service || 'the affected service');
+    };
+
+    // Check if we have valid AI data with the new structure
+    const hasValidData = aiData && (
+      aiData.top_cves?.length > 0 ||
+      aiData.enhanced_hosts?.length > 0 ||
+      aiData.smart_recommendations?.length > 0 ||
+      aiData.executive_summary
+    );
+
+    if (!hasValidData) {
+      aiContainer.innerHTML = `
+      <div class="ai-section">
+        <div class="section-header">
+          <h2>🤖 AI Security Assessment</h2>
+          <span class="muted">No AI analysis available for this scan</span>
+        </div>
+        <div class="ai-empty-state" style="
+          text-align: center;
+          padding: 40px 20px;
+          background: var(--bg);
+          border-radius: 8px;
+          border: 1px dashed var(--border);
+          color: var(--muted);
+        ">
+          <p>Unable to generate AI assessment for this scan.</p>
+          <p class="small">Try running a deep scan for more comprehensive analysis.</p>
+        </div>
+      </div>
+    `;
+      return;
+    }
+
+    // Extract data from the new structure
+    const topCVEs = aiData.top_cves || [];
+    const enhancedHosts = aiData.enhanced_hosts || [];
+    const smartRecommendations = aiData.smart_recommendations || [];
+    const executiveSummary = aiData.executive_summary || {};
+
+    // ***** FIX: Define analyzedCVEs HERE, BEFORE using it *****
+    // Analyze CVEs for statistics - MUST BE DEFINED BEFORE USE
+    const analyzedCVEs = topCVEs.map(cve => ({
+      ...cve,
+      severity: getCVESeverity(cve),
+      cvss: getCVSSScore(cve),
+      heuristicScore: cve.heuristic_analysis?.score || 0
+    }));
+
+    // Calculate statistics - NOW analyzedCVEs is defined
+    const totalCVEs = aiData.total_cves_analyzed || topCVEs.length;
+    const criticalFindings = executiveSummary.critical_findings ||
+      analyzedCVEs.filter(cve => cve.heuristicScore >= 90).length;
+
+    // Use analyzedCVEs which is now defined above
+    const highRiskFindings = analyzedCVEs.filter(cve => cve.heuristicScore >= 70 && cve.heuristicScore < 90).length;
+    const mediumRiskFindings = analyzedCVEs.filter(cve => cve.heuristicScore >= 40 && cve.heuristicScore < 70).length;
+    const lowRiskFindings = analyzedCVEs.filter(cve => cve.heuristicScore > 0 && cve.heuristicScore < 40).length;
+
+    // Get overall risk level - check both English and Portuguese
+    let overallRisk = executiveSummary.risk_level || 'UNKNOWN';
+    if (overallRisk === 'MÉDIO') overallRisk = 'MEDIUM';
+
+    const overallRiskScore = executiveSummary.overall_risk_score || 0;
+
+    // Generate summary text
+    const generateSummary = () => {
+      if (criticalFindings > 0) {
+        return `${criticalFindings} critical issue${criticalFindings > 1 ? 's' : ''} require immediate attention`;
+      } else if (highRiskFindings > 0) {
+        return `${highRiskFindings} high-risk issue${highRiskFindings > 1 ? 's' : ''} should be addressed promptly`;
+      } else if (mediumRiskFindings > 0) {
+        return `${mediumRiskFindings} moderate issue${mediumRiskFindings > 1 ? 's' : ''} identified for review`;
+      } else if (lowRiskFindings > 0) {
+        return `${lowRiskFindings} low-priority finding${lowRiskFindings > 1 ? 's' : ''} detected`;
+      } else {
+        return 'No significant security issues detected';
+      }
+    };
+
+    // Render the AI assessment with new data structure
+    // ... [rest of the HTML rendering code remains the same]
+    aiContainer.innerHTML = `
+    <div class="ai-section">
+      <div class="section-header">
+        <h2>🤖 AI Security Assessment</h2>
+        <span class="muted">Powered by AI heuristics analysis</span>
+      </div>
+      
+      <!-- Overall Risk Summary -->
+      <div class="ai-risk-summary" style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+        padding: 20px;
+        background: var(--bg);
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      ">
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Overall Risk</span>
+          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: ${getRiskColor(overallRisk)};">
+            ${overallRisk.toUpperCase()}
+          </span>
+        </div>
+        
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Risk Score</span>
+          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: var(--ink);">
+            ${overallRiskScore}/100
+          </span>
+        </div>
+        
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">CVEs Analyzed</span>
+          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: var(--ink);">
+            ${totalCVEs}
+          </span>
+        </div>
+        
+        <div class="risk-item" style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <span class="risk-label" style="font-size: 0.9em; color: var(--muted); margin-bottom: 5px;">Critical Issues</span>
+          <span class="risk-value" style="font-size: 1.4em; font-weight: bold; color: #dc3545;">
+            ${criticalFindings}
+          </span>
+        </div>
+      </div>
+      
+      <!-- Executive Summary -->
+      ${executiveSummary.top_concerns ? `
+        <div class="executive-summary" style="
+          margin-bottom: 25px;
+          padding: 20px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 8px;
+          color: white;
+        ">
+          <h3 style="color: white; margin-bottom: 15px;">📋 Executive Summary</h3>
+          <div style="line-height: 1.6; margin-bottom: 15px;">
+            Overall risk level: <strong>${overallRisk.toUpperCase()}</strong> (Score: ${overallRiskScore}/100)<br>
+            Analyzed ${totalCVEs} CVEs across ${enhancedHosts.length} host(s)
+          </div>
+          
+          ${executiveSummary.top_concerns && executiveSummary.top_concerns.length > 0 ? `
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+              <h4 style="color: white; margin-bottom: 10px;">🔍 Top Security Concerns:</h4>
+              <ul style="margin: 0; padding-left: 20px; color: rgba(255,255,255,0.9);">
+                ${executiveSummary.top_concerns.map(concern => `
+                  <li>
+                    <strong>${concern.cve}</strong> on ${concern.affected_host} 
+                    (Risk score: ${concern.risk_score || 'N/A'})
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
+      
+      <!-- Risk Distribution -->
+      <div class="risk-distribution" style="margin-bottom: 25px;">
+        <h3 style="margin-bottom: 10px; color: var(--ink);">Risk Distribution</h3>
+        <div style="display: flex; height: 24px; border-radius: 12px; overflow: hidden; margin-bottom: 10px;">
+          ${criticalFindings > 0 ? `<div style="flex: ${criticalFindings}; background: #dc3545;" title="${criticalFindings} Critical"></div>` : ''}
+          ${highRiskFindings > 0 ? `<div style="flex: ${highRiskFindings}; background: #fd7e14;" title="${highRiskFindings} High"></div>` : ''}
+          ${mediumRiskFindings > 0 ? `<div style="flex: ${mediumRiskFindings}; background: #ffc107;" title="${mediumRiskFindings} Medium"></div>` : ''}
+          ${lowRiskFindings > 0 ? `<div style="flex: ${lowRiskFindings}; background: #198754;" title="${lowRiskFindings} Low"></div>` : ''}
+          ${totalCVEs - (criticalFindings + highRiskFindings + mediumRiskFindings + lowRiskFindings) > 0 ?
+        `<div style="flex: ${totalCVEs - (criticalFindings + highRiskFindings + mediumRiskFindings + lowRiskFindings)}; background: #0dcaf0;" title="Info"></div>` : ''}
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: var(--muted);">
+          <span>${generateSummary()}</span>
+          <span>Generated: ${new Date().toLocaleString()}</span>
+        </div>
+      </div>
+      
+      <!-- Top CVEs Section -->
+      ${topCVEs.length > 0 ? `
+        <div class="cves-section" style="margin-bottom: 25px;">
+          <h3 style="
+            color: var(--ink);
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary);
+          ">
+            🔥 Top Security Vulnerabilities (${Math.min(topCVEs.length, 10)})
+          </h3>
+          
+          <div class="cves-list" style="display: flex; flex-direction: column; gap: 12px;">
+            ${topCVEs.slice(0, 10).map((cve, index) => {
+          const severity = getCVEUrgency(cve);
+          const cvssScore = getCVSSScore(cve);
+          const description = getCVEDescription(cve);
+          const recommendation = getCVERecommendation(cve);
+          const exploitAvailable = cve.exploit_available || cve.exploit || false;
+          const heuristicScore = cve.heuristic_analysis?.score || 0;
+
+          return `
+                <div class="cve-card" style="
+                  padding: 15px;
+                  border-radius: 8px;
+                  border-left: 4px solid ${getRiskColor(severity)};
+                  background: ${getRiskColor(severity)}15;
+                  transition: transform 0.2s ease;
+                ">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                    <div style="flex: 1;">
+                      <strong style="color: var(--ink); font-size: 1.1em;">${cve.cve_id || cve.id || `CVE-${index + 1}`}</strong>
+                      ${getSeverityBadge(severity)}
+                      ${exploitAvailable ?
+              `<span style="
+                          background: #dc3545;
+                          color: white;
+                          padding: 2px 8px;
+                          border-radius: 10px;
+                          font-size: 0.8em;
+                          font-weight: bold;
+                          margin-left: 8px;
+                        ">EXPLOIT AVAILABLE</span>` : ''}
+                      ${heuristicScore > 0 ? `
+                        <span style="
+                          background: ${getRiskColor(severity)};
+                          color: white;
+                          padding: 2px 8px;
+                          border-radius: 10px;
+                          font-size: 0.8em;
+                          font-weight: bold;
+                          margin-left: 8px;
+                        ">
+                          AI Score: ${heuristicScore}
+                        </span>
+                      ` : ''}
+                    </div>
+                    <span style="font-weight: bold; color: ${getRiskColor(severity)}; white-space: nowrap;">
+                      CVSS: ${cvssScore}
+                    </span>
+                  </div>
+                  
+                  <div style="color: var(--muted); margin-bottom: 10px; font-size: 0.95em; line-height: 1.5;">
+                    ${description}
+                  </div>
+                  
+                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                    ${cve.port ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        📍 Port ${cve.port}
+                      </span>
+                    ` : ''}
+                    
+                    ${cve.service ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🔧 ${cve.service}
+                      </span>
+                    ` : ''}
+                    
+                    ${cve.host ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🖥️ ${cve.host}
+                      </span>
+                    ` : ''}
+                    
+                    ${cve.year ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        📅 ${cve.year}
+                      </span>
+                    ` : ''}
+                    
+                    ${cve.device_type ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🖧 ${cve.device_type}
+                      </span>
+                    ` : ''}
+                  </div>
+                  
+                  ${renderAIFactors(cve)}
+                  
+                  <div style="
+                    background: white;
+                    padding: 12px;
+                    border-radius: 6px;
+                    border: 1px solid var(--border);
+                    margin-top: 10px;
+                  ">
+                    <strong style="color: #198754; display: block; margin-bottom: 5px;">✅ AI Recommendation:</strong>
+                    <div style="margin: 0; font-size: 0.9em; color: var(--ink); line-height: 1.4;">
+                      ${recommendation}
+                    </div>
+                    
+                    ${cve.recommendation?.timeframe ? `
+                      <div style="margin-top: 8px; font-size: 0.85em; color: var(--muted);">
+                        <strong>Timeframe:</strong> ${cve.recommendation.timeframe}
+                      </div>
+                    ` : ''}
+                  </div>
+                  
+                  ${cve.cve_id ? `
+                    <div style="margin-top: 10px; font-size: 0.85em;">
+                      <a href="https://nvd.nist.gov/vuln/detail/${cve.cve_id}" 
+                         target="_blank" 
+                         rel="noopener noreferrer"
+                         style="color: #0d6efd; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+                        🔗 View detailed CVE information
+                      </a>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+        }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Smart Recommendations -->
+      ${smartRecommendations.length > 0 ? `
+        <div class="recommendations-section" style="margin-bottom: 25px;">
+          <h3 style="
+            color: var(--ink);
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #198754;
+          ">
+            🎯 AI-Powered Recommendations (${smartRecommendations.length})
+          </h3>
+          
+          <div class="recommendations-list" style="display: flex; flex-direction: column; gap: 12px;">
+            ${smartRecommendations.map((rec, index) => {
+          const priority = rec.urgency || rec.priority || 'MEDIUM';
+
+          return `
+                <div class="recommendation-card" style="
+                  padding: 15px;
+                  border-radius: 8px;
+                  border-left: 4px solid ${getRiskColor(priority)};
+                  background: #f8f9fa;
+                  transition: transform 0.2s ease;
+                ">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                    <strong style="color: var(--ink); font-size: 1.1em;">
+                      ${rec.type === 'AI_RECOMMENDATION' ? 'AI Security Recommendation' : rec.type || `Recommendation #${index + 1}`}
+                    </strong>
+                    ${getSeverityBadge(priority)}
+                  </div>
+                  
+                  <div style="color: var(--muted); margin-bottom: 10px; font-size: 0.95em; line-height: 1.5;">
+                    ${rec.justification || rec.description || 'No description available'}
+                  </div>
+                  
+                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                    ${rec.host ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🖥️ ${rec.host}
+                      </span>
+                    ` : ''}
+                    
+                    ${rec.cve_id ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🎯 ${rec.cve_id}
+                      </span>
+                    ` : ''}
+                    
+                    ${rec.heuristic_score ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        🧠 AI Score: ${rec.heuristic_score}
+                      </span>
+                    ` : ''}
+                    
+                    ${rec.timeframe ? `
+                      <span style="
+                        background: var(--bg);
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        color: var(--ink);
+                      ">
+                        ⏰ ${rec.timeframe}
+                      </span>
+                    ` : ''}
+                  </div>
+                  
+                  <div style="
+                    background: white;
+                    padding: 12px;
+                    border-radius: 6px;
+                    border: 1px solid var(--border);
+                    margin-top: 10px;
+                  ">
+                    <strong style="color: #0d6efd; display: block; margin-bottom: 5px;">📝 Recommended Action:</strong>
+                    <p style="margin: 0; font-size: 0.9em; color: var(--ink); line-height: 1.4;">
+                      ${rec.action || 'Apply security patches and configurations'}
+                    </p>
+                  </div>
+                </div>
+              `;
+        }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Enhanced Hosts -->
+      ${enhancedHosts.length > 0 ? `
+        <div class="hosts-section" style="margin-bottom: 25px;">
+          <h3 style="
+            color: var(--ink);
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #0dcaf0;
+          ">
+            🖥️ Host Security Analysis (${enhancedHosts.length})
+          </h3>
+          
+          <div class="hosts-list" style="display: flex; flex-direction: column; gap: 12px;">
+            ${enhancedHosts.map((host, index) => {
+          const hostAnalysis = host.ai_heuristic_analysis || {};
+          const hostRisk = hostAnalysis.overall_risk ||
+            (hostAnalysis.overall_heuristic_score >= 80 ? 'HIGH' :
+              hostAnalysis.overall_heuristic_score >= 50 ? 'MEDIUM' : 'LOW');
+
+          return `
+                <div class="host-card" style="
+                  padding: 20px;
+                  border-radius: 8px;
+                  border: 1px solid var(--border);
+                  background: white;
+                  transition: transform 0.2s ease;
+                ">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                    <div>
+                      <strong style="color: var(--ink); font-size: 1.2em;">
+                        ${host.host || `Host ${index + 1}`}
+                      </strong>
+                      ${host.hostname ? `
+                        <div style="color: var(--muted); margin-top: 5px; font-size: 0.95em;">
+                          ${host.hostname}
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div style="text-align: right;">
+                      ${getSeverityBadge(hostRisk)}
+                      <div style="font-weight: bold; color: ${getRiskColor(hostRisk)}; margin-top: 5px;">
+                        Risk Score: ${hostAnalysis.overall_heuristic_score || 0}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div style="text-align: center;">
+                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
+                        ${hostAnalysis.total_cves || 0}
+                      </div>
+                      <div style="font-size: 0.85em; color: var(--muted);">CVEs Found</div>
+                    </div>
+                    
+                    <div style="text-align: center;">
+                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
+                        ${host.open_ports_count || 0}
+                      </div>
+                      <div style="font-size: 0.85em; color: var(--muted);">Open Ports</div>
+                    </div>
+                    
+                    <div style="text-align: center;">
+                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
+                        ${host.device_type || 'Unknown'}
+                      </div>
+                      <div style="font-size: 0.85em; color: var(--muted);">Device Type</div>
+                    </div>
+                  </div>
+                  
+                  ${hostAnalysis.summary_by_urgency ? `
+                    <div style="margin-top: 15px; padding: 15px; background: var(--bg); border-radius: 6px;">
+                      <strong style="color: var(--ink); display: block; margin-bottom: 10px;">📊 AI Security Summary:</strong>
+                      <div style="font-size: 0.9em; color: var(--muted); line-height: 1.5;">
+                         ${getHostSummaryText(hostAnalysis)}
+                      </div>
+                    </div>
+                  ` : ''}
+                  
+                  ${hostAnalysis.prioritized_cves && hostAnalysis.prioritized_cves.length > 0 ? `
+                    <div style="margin-top: 15px;">
+                      <strong style="color: var(--ink); display: block; margin-bottom: 10px;">🔍 Top CVEs on this host:</strong>
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        ${hostAnalysis.prioritized_cves.slice(0, 5).map(cve => `
+                          <span style="
+                            background: ${getRiskColor(getCVESeverity(cve))};
+                            color: white;
+                            padding: 4px 10px;
+                            border-radius: 15px;
+                            font-size: 0.8em;
+                            font-weight: bold;
+                          ">
+                            ${cve.cve_id || 'CVE'}
+                          </span>
+                        `).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+        }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Statistics -->
+      <div style="
+        margin-top: 20px;
+        padding: 15px;
+        background: var(--bg);
+        border-radius: 8px;
+        font-size: 0.9em;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      ">
+        <span>
+          AI assessment generated from ${totalCVEs} analyzed CVEs across ${enhancedHosts.length} host(s)
+        </span>
+        <button class="btn-secondary small" onclick="exportAIAssessment()">
+          📥 Export Report
+        </button>
+      </div>
+    </div>
+  `;
+
+    // Add hover effects
+    setTimeout(() => {
+      document.querySelectorAll('.cve-card, .recommendation-card, .host-card').forEach(card => {
+        card.addEventListener('mouseenter', () => {
+          card.style.transform = 'translateY(-2px)';
+          card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+        });
+        card.addEventListener('mouseleave', () => {
+          card.style.transform = 'translateY(0)';
+          card.style.boxShadow = 'none';
+        });
+      });
+    }, 100);
+
+    // Scroll to AI assessment section
+    setTimeout(() => {
+      aiContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
+
+  /* ====== EXPORT AI ASSESSMENT ====== */
+
+  function exportAIAssessment() {
+    const aiContainer = document.getElementById('ai-assessment-container');
+    if (!aiContainer) {
+      alert('No AI assessment to export');
+      return;
+    }
+
+    // Create a clean version of the content for export
+    const content = aiContainer.innerText;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `ai-security-assessment-${timestamp}.txt`;
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /* ====== ADD STYLES FOR AI ASSESSMENT ====== */
+  function addAIAssessmentStyles() {
+    const styleId = 'ai-assessment-styles';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+    .ai-assessment-container {
+      margin-top: 30px;
+      margin-bottom: 30px;
+    }
+    
+    .ai-section {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      border: 1px solid #e9ecef;
+    }
+    
+    .finding-card {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .finding-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .severity-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 60px;
+      height: 24px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .dark .ai-section {
+      background: var(--bg);
+      border-color: var(--border);
+    }
+    
+    .dark .finding-card {
+      background: rgba(255,255,255,0.05);
+    }
+  `;
+
+    document.head.appendChild(style);
+  }
+
+  // Add styles when initializing
+  document.addEventListener('DOMContentLoaded', addAIAssessmentStyles);
   document.getElementById("btn-clear-trivial")?.addEventListener("click", handleClearTrivial);
 
   document.addEventListener("dblclick", (e) => {
