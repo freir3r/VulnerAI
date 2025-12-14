@@ -2632,7 +2632,7 @@ async function init() {
                   
                   ${renderAIFactors(cve)}
                   
-                  <div style="
+                  <div style=" 
                     background: white;
                     padding: 12px;
                     border-radius: 6px;
@@ -2838,6 +2838,7 @@ async function init() {
   // Show history by default
   showScansHistoryView();
   testAPIConnection();
+  
 }
 
 /* ====== TEST API CONNECTION ====== */

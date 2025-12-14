@@ -4094,89 +4094,245 @@ class AIHeuristicEngine {
     const service = (cve.service || '').toLowerCase();
     const cvss = cve.CVSS?.score || 0;
     const exploit = cve.exploit_available === true;
-
-    // Recomendações específicas por serviço
-    const serviceRecommendations = {
-      'nginx': 'Atualizar o Nginx para a versão estável mais recente (>= 1.18)',
-      'apache': 'Atualizar o Apache HTTP Server para a versão mais recente da branch 2.4.x',
-      'httpd': 'Atualizar o Apache HTTP Server para a versão mais recente da branch 2.4.x',
-      'openssh': 'Atualizar o OpenSSH para a versão mais recente e rodar ssh-audit',
-      'ssh': 'Atualizar o OpenSSH e rever configurações de autenticação',
-      'mysql': 'Atualizar o MySQL para a versão 8.x mais recente',
-      'postgresql': 'Atualizar o PostgreSQL para a versão 13+ corrigida',
-      'node': 'Atualizar o Node.js para uma versão LTS suportada',
-      'node.js': 'Atualizar o Node.js para uma versão LTS suportada',
-      'rdp': 'Aplicar patches de segurança do sistema operativo (RDP)',
-      'smb': 'Aplicar patches SMB e desativar SMBv1 se ativo',
-      'ftp': 'Atualizar o serviço FTP ou substituir por SFTP',
-      'telnet': 'DESATIVAR Telnet e substituir por SSH',
-      'vnc': 'Atualizar VNC e restringir acesso por firewall/VPN'
-    };
-
-    for (const [key, recommendation] of Object.entries(serviceRecommendations)) {
-      if (service.includes(key)) {
-        return recommendation;
+    const year = cve.year || this.extractYearFromCVE(cve.cve_id);
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - year;
+    const product = cve.service_product || '';
+    // Build specific recommendation based on all factors
+    let recommendation = '';
+    
+    // 1. Start with service-specific actions
+    if (service.includes('ssh') || service.includes('openssh')) {
+      if (age <= 1) {
+        recommendation = 'ATUALIZAÇÃO URGENTE OpenSSH: ';
+        if (cvss >= 9.0) {
+          recommendation += 'Update imediato para OpenSSH 9.8+ (CVE crítico). Desative agent forwarding não necessário e configure autenticação por chaves apenas.';
+        } else if (cvss >= 7.0) {
+          recommendation += 'Update para OpenSSH 8.9+ e configure: Protocol 2 apenas, desative root login, use fail2ban.';
+        } else {
+          recommendation += 'Update OpenSSH e revise configurações de segurança (sshd_config).';
+        }
+      } else {
+        recommendation = 'Versão de OpenSSH muito antiga. Update para versão suportada e execute ssh-audit para análise.';
+      }
+    }
+    else if (service.includes('http') || service.includes('apache')) {
+      if (age <= 1) {
+        recommendation = 'PATCH HTTP CRÍTICO: ';
+        if (cvss >= 9.0) {
+          recommendation += 'Update Apache 2.4.58+ IMEDIATO. Desative mod_info/mod_status, configure security headers (CSP, HSTS), e implemente WAF temporário.';
+        } else if (cvss >= 7.0) {
+          recommendation += 'Update Apache 2.4.55+ dentro de 7 dias. Configure TLS 1.2+, limite request size, e habilite mod_security.';
+        } else {
+          recommendation += 'Update Apache e configure hardening básico.';
+        }
+      } else {
+        recommendation = 'Apache versão desatualizada. Migre para versão suportada ou considere alternativas (nginx).';
+      }
+    }
+    else if (service.includes('nginx')) {
+      recommendation = 'Update Nginx para versão 1.24+. Desative server tokens, configure SSL/TLS moderno, e implemente rate limiting.';
+    }
+    else if (service.includes('mysql')) {
+      recommendation = 'Update MySQL para 8.0.36+. Desative acesso remoto se não necessário, configure strong passwords, e habilite logging.';
+    }
+    else if (service.includes('postgresql')) {
+      recommendation = 'Update PostgreSQL para 13.12+. Configure pg_hba.conf para restringir acesso e habilite SSL.';
+    }
+    else if (service.includes('rdp')) {
+      recommendation = 'APLICAÇÃO IMEDIATA: Configure Network Level Authentication (NLA), limite tentativas de login, e use VPN para acesso.';
+    }
+    else if (service.includes('telnet')) {
+      recommendation = 'SUBSTITUA IMEDIATAMENTE por SSH. Telnet é inseguro por design - migração urgente requerida.';
+    }
+    else if (service.includes('ftp')) {
+      recommendation = 'Migre para SFTP/SCP. Se FTP necessário, use FTPS com certificados válidos e limite acessos.';
+    }
+    else {
+      // Generic but more specific based on CVSS
+      if (cvss >= 9.0) {
+        recommendation = 'PATCH DE EMERGÊNCIA: Aplicar correção oficial dentro de 24h. Isole sistema se patch não disponível.';
+      } else if (cvss >= 7.0) {
+        recommendation = 'PATCH PRIORITÁRIO: Atualizar software afetado dentro de 7 dias. Configure compensações temporárias.';
+      } else {
+        recommendation = 'Atualizar para versão corrigida na próxima janela de manutenção.';
       }
     }
 
-    // CVSS crítico sem serviço claro
-    if (cvss >= 9.0) {
-      return 'Aplicar patch oficial do fabricante imediatamente (CVE crítico)';
-    }
-
-    // Exploit conhecido
+    // 2. Add exploit warning
     if (exploit) {
-      return 'Atualizar software afetado e aplicar mitigação temporária até patch definitivo';
+      recommendation += ' ⚠️ EXPLOIT PÚBLICO DISPONÍVEL - Prioridade máxima!';
     }
 
-    // Fallback genérico
-    return 'Aplicar patch oficial do fornecedor ou atualizar para a versão corrigida mais recente';
+    // 3. Add age context
+    if (age > 3) {
+      recommendation += ' Sistema extremamente desatualizado (' + age + ' anos). Considere substituição completa.';
+    }
+
+    return recommendation;
   }
 
   // Gerar itens de ação específicos
   gerarItensAcao(cve, hostData, heuristic) {
     const actions = [];
     const portasAfetadas = this.identificarPortasAfetadas(cve, hostData);
+    const service = (cve.service || '').toLowerCase();
+    const cvss = cve.CVSS?.score || 0;
+    const exploit = cve.exploit_available;
 
-    // Ação 1 sempre (patch)
+    // Priority 1: Patch action (ALWAYS)
+    const patchDetails = this.getPatchRecommendation(cve);
     actions.push({
       priority: 1,
       action: 'Aplicar patch de segurança',
-      details: `CVE ${cve.cve_id} - ${this.getPatchRecommendation(cve)}`,
-      estimated_time: '2-4 horas'
+      details: patchDetails,
+      estimated_time: cvss >= 9.0 ? '1-2 horas (emergência)' : '2-4 horas',
+      immediate: cvss >= 9.0 || exploit
     });
 
-    // Ação 2 SOMENTE se exploit disponível
-    if (cve.exploit_available) {
+    // Priority 2: Exploit-specific actions
+    if (exploit) {
       actions.push({
         priority: 2,
-        action: 'Implementar workaround temporário',
-        details: 'Exploit conhecido disponível - aplicar compensações',
-        estimated_time: '1-2 horas'
+        action: 'Mitigação de exploit ativo',
+        details: 'Exploit público disponível - Implementar: ' + this.getExploitMitigation(cve),
+        estimated_time: '1-3 horas',
+        immediate: true
       });
     }
 
-    // Ação 3 se alta exposição
-    if (heuristic.factors.networkExposure > 60 && portasAfetadas.length > 0) {
+    // Priority 3: Network containment
+    if (portasAfetadas.length > 0 && heuristic.factors.networkExposure > 50) {
+      const exposureAction = this.getNetworkContainment(portasAfetadas, service, hostData);
       actions.push({
         priority: 3,
-        action: 'Restringir acesso às portas',
-        details: `Portas ${portasAfetadas.join(', ')} expostas`,
-        estimated_time: '30 minutos'
+        action: 'Contenção de rede',
+        details: exposureAction,
+        estimated_time: '30-60 minutos',
+        immediate: cvss >= 7.0
       });
     }
 
-    // Ação 4 sempre (monitoramento)
+    // Priority 4: Service-specific hardening
+    const hardeningAction = this.getServiceHardening(service, cvss);
+    if (hardeningAction) {
+      actions.push({
+        priority: 4,
+        action: 'Hardening do serviço',
+        details: hardeningAction,
+        estimated_time: '1-2 horas',
+        immediate: false
+      });
+    }
+
+    // Priority 5: Monitoring enhancements
     actions.push({
-      priority: 4,
-      action: 'Aumentar monitoramento',
-      details: 'Monitorar tráfego e logs',
-      estimated_time: 'Contínuo'
+      priority: 5,
+      action: 'Monitoramento aprimorado',
+      details: this.getMonitoringRecommendation(cve, service),
+      estimated_time: 'Contínuo',
+      immediate: false
+    });
+
+    // Priority 6: Verification steps
+    actions.push({
+      priority: 6,
+      action: 'Verificação do patch',
+      details: this.getVerificationSteps(service),
+      estimated_time: '15-30 minutos',
+      immediate: false
     });
 
     return actions;
   }
+  getExploitMitigation(cve) {
+    const cveId = cve.cve_id;
 
+    // Common exploit mitigations
+    if (cveId.includes('2023-38408')) { // OpenSSH RCE
+      return 'Desative SSH Agent Forwarding, configure AllowAgentForwarding no, limite tempo do ssh-agent';
+    }
+    if (cveId.includes('2022-22720')) { // Apache HTTP smuggling
+      return 'Desative HTTP/2 temporariamente, configure mod_reqtimeout, use mod_security';
+    }
+    if (cveId.includes('2021-44228')) { // Log4Shell
+      return 'Remova JndiLookup.class, configure log4j2.formatMsgNoLookups=true, bloqueie conexões LDAP externas';
+    }
+
+    return 'Isolar sistema da internet, implementar regras de firewall específicas, aumentar logging';
+  }
+
+  // NEW HELPER: Get network containment recommendations
+  getNetworkContainment(ports, service, hostData) {
+    let details = `Portas ${ports.join(', ')} expostas. `;
+
+    if (service.includes('ssh')) {
+      details += 'Restrinja SSH a IPs de administração via firewall, considere usar VPN jump host.';
+    }
+    else if (service.includes('http')) {
+      details += 'Configure WAF (Cloudflare/ModSecurity), limite rate por IP, use CDN para proteção.';
+    }
+    else if (service.includes('rdp') || service.includes('vnc')) {
+      details += 'REMOVA acesso direto à internet! Use VPN obrigatória para acesso remoto.';
+    }
+    else if (service.includes('mysql') || service.includes('postgresql')) {
+      details += 'Database NUNCA exposto à internet. Restrinja a sub-rede de aplicação apenas.';
+    }
+    else {
+      details += 'Avaliar se serviço precisa de acesso externo. Restringir por geolocalização se possível.';
+    }
+
+    return details;
+  }
+
+  // NEW HELPER: Get service-specific hardening
+  getServiceHardening(service, cvss) {
+    if (service.includes('ssh')) {
+      return 'Configure: PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3, LoginGraceTime 1m';
+    }
+    if (service.includes('http')) {
+      return 'Configure headers: Content-Security-Policy, X-Frame-Options DENY, X-Content-Type-Options nosniff';
+    }
+    if (service.includes('mysql')) {
+      return 'Configure: skip-name-resolve, local-infile=0, log_warnings=2, secure_file_priv=/tmp';
+    }
+
+    return cvss >= 7.0 ? 'Aplique princípio de menor privilégio e segmente rede' : null;
+  }
+
+  // NEW HELPER: Get monitoring recommendations
+  getMonitoringRecommendation(cve, service) {
+    const cveId = cve.cve_id;
+    let details = 'Monitorar logs para tentativas de exploit. ';
+
+    if (cveId.includes('2023-38408') || service.includes('ssh')) {
+      details += 'Alertar sobre: múltiplas falhas SSH, agent forwarding suspeito, conexões de IPs desconhecidos';
+    }
+    else if (service.includes('http')) {
+      details += 'Monitorar: requests anormais, padrões de ataque conhecidos, consumo anormal de recursos';
+    }
+    else if (service.includes('database')) {
+      details += 'Alertar sobre: queries lentas, muitas conexões, exportação de dados grande';
+    }
+
+    details += ' Configurar alertas para qualquer atividade suspeita nas portas afetadas.';
+    return details;
+  }
+
+  // NEW HELPER: Get verification steps
+  getVerificationSteps(service) {
+    if (service.includes('ssh')) {
+      return 'Verificar: ssh -V (versão), sudo sshd -T | grep permitroot, analisar /var/log/auth.log';
+    }
+    if (service.includes('http')) {
+      return 'Verificar: apache2 -v, testar headers de segurança, scan com nikto/sslscan';
+    }
+    if (service.includes('mysql')) {
+      return 'Verificar: SELECT VERSION();, SHOW VARIABLES LIKE "%version%";, revisar usuários';
+    }
+
+    return 'Testar serviço após patch, verificar logs de erro, confirmar funcionamento normal';
+  }
   // Identificar portas afetadas por um CVE
   identificarPortasAfetadas(cve, hostData) {
     const affectedPorts = [];
@@ -4194,19 +4350,32 @@ class AIHeuristicEngine {
   // Gerar justificativa para a priorização
   gerarJustificativa(heuristic, cve, hostData) {
     const justifications = [];
+    const cvss = cve.CVSS?.score || 0;
+    const exploit = cve.exploit_available;
+    const year = cve.year || this.extractYearFromCVE(cve.cve_id);
+    const age = new Date().getFullYear() - year;
+    const exposure = heuristic.factors.networkExposure;
 
-    // CVSS mais preciso
-    if (cve.CVSS?.score >= 9.0) justifications.push('CVSS CRÍTICO (>= 9.0)');
-    else if (cve.CVSS?.score >= 7.0) justifications.push('CVSS ALTO (>= 7.0)');
-    else if (cve.CVSS?.score >= 4.0) justifications.push('CVSS MÉDIO (>= 4.0)');
-    else justifications.push('CVSS BAIXO (< 4.0)');
+    // CVSS with more context
+    if (cvss >= 9.0) justifications.push('CVSS CRÍTICO ' + cvss + ' - RCE/PrivEsc possível');
+    else if (cvss >= 7.0) justifications.push('CVSS ALTO ' + cvss + ' - Impacto significativo');
+    else if (cvss >= 4.0) justifications.push('CVSS MÉDIO ' + cvss + ' - Risco moderado');
+    else justifications.push('CVSS BAIXO ' + cvss + ' - Impacto limitado');
 
-    // Idade mais precisa
-    const age = new Date().getFullYear() - cve.year;
-    if (age === 0) justifications.push('CVE DESTE ANO');
-    else if (age === 1) justifications.push('CVE DO ANO PASSADO');
-    else if (age <= 3) justifications.push(`CVE DE ${age} ANOS`);
-    else justifications.push(`CVE ANTIGO (${age} anos)`);
+    // Age with context
+    if (age === 0) justifications.push('CVE RECENTE (2025) - Ativo em ataques');
+    else if (age === 1) justifications.push('CVE 2024 - Ainda relevante');
+    else if (age <= 3) justifications.push(`CVE ${year} - ${age} anos, ainda explorável`);
+    else justifications.push(`CVE ANTIGO ${year} - ${age} anos, mas sistema desatualizado`);
+
+    // Exploit availability
+    if (exploit) justifications.push('EXPLOIT PÚBLICO - Risco imediato');
+    else justifications.push('Sem exploit público conhecido');
+
+    // Network exposure
+    if (exposure >= 80) justifications.push('EXPOSIÇÃO ALTA - Serviço acessível na internet');
+    else if (exposure >= 60) justifications.push('Exposição moderada');
+    else justifications.push('Exposição limitada');
 
     return justifications.join(' | ');
   }
