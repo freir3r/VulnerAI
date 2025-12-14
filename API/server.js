@@ -2509,8 +2509,8 @@ app.use(helmet());
 
 // Basic rate limiter to protect endpoints from abuse
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Increase the limit
+  windowMs: 1 * 60 * 1000, // 1 minutes
+  max: 1500, // Increase the limit
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
@@ -2522,6 +2522,7 @@ const apiLimiter = rateLimit({
       // This is likely a polling request for scan status
       return true;
     }
+  
     if (req.method === 'OPTIONS') return true;
     return false;
   }
@@ -2697,7 +2698,7 @@ app.post('/scan', async (req, res) => {
     const scanId = uuidv4();
     await safeFirestoreSet(db.collection('Scan').doc(scanId), {
       status: 'ongoing',
-      submitted_at: admin.firestore.FieldValue.serverTimestamp(),
+      submitted_at: new Date().toISOString(),
       started_at: null,
       finished_at: null,
       scan_type: preset,
@@ -2718,7 +2719,7 @@ app.post('/scan', async (req, res) => {
       if (!canPing) {
         await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
           status: 'failed',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          finished_at: new Date().toISOString,
           error: 'Network unreachable - pre-scan check failed',
           error_details: { sample_ip: sampleIP }
         });
@@ -2736,7 +2737,7 @@ app.post('/scan', async (req, res) => {
       let runResult;
       try {
         await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
-          started_at: admin.firestore.FieldValue.serverTimestamp()
+          started_at: new Date().toISOString(),
         });
 
         console.log(`[${scanId}] Starting ${preset} scan for: ${scanTarget}`);
@@ -2770,7 +2771,7 @@ app.post('/scan', async (req, res) => {
         // Update main scan record
         await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
           status: 'complete',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          finished_at: new Date().toISOString(),
           summary: {
             total_hosts: parsed.totalHosts,
             active_hosts: parsed.activeHosts,
@@ -2786,7 +2787,7 @@ app.post('/scan', async (req, res) => {
         console.error(`[${scanId}] Scan failed: ${err.message}`);
         await safeFirestoreUpdate(db.collection('Scan').doc(scanId), {
           status: 'failed',
-          finished_at: admin.firestore.FieldValue.serverTimestamp(),
+          finished_at: new Date().toISOString(),
           error: err.message,
           error_details: {
             stderr: runResult?.stderr || '',

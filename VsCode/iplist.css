@@ -287,3 +287,75 @@ body.dark .badge.kind{ background:#172038; border-color:#223255; }
 body.dark .chip{ background:#1a2030; border-color:#2a3244; color:#cfd3dc; }
 body.dark .chip-green{ background:#14241a; border-color:#1f3a28; color:#bde6c8; }
 body.dark .bulk{ background:#0f141d; border-bottom:1px solid var(--dark-border); }
+
+
+
+
+/* ====== NOVOS ESTILOS (ADICIONAR NO FINAL) ====== */
+
+/* Chip colors for CVE risk */
+.chip-red { background:#ffebeb; border-color:#ffc7c7; color:#a82a2a; }
+.chip-orange { background:#fff4e6; border-color:#ffd7b3; color:#b36200; }
+.chip-yellow { background:#fffbe6; border-color:#fff1b8; color:#b38200; }
+.chip-green { background:#eaf7ee; border-color:#cfe9d6; color:#2e7d32; }
+.chip-tag { background:#e6f7ff; border-color:#91d5ff; color:#0066cc; font-size: .7rem; padding: 2px 6px; }
+
+/* Import button */
+#iplist-import-csv {
+  padding: 8px 12px;
+  font-size: .9rem;
+}
+
+/* Dark mode chips */
+body.dark .chip-red { background:#3a1a1a; border-color:#5a2a2a; color:#ffb3b3; }
+body.dark .chip-orange { background:#3a2a1a; border-color:#5a3a2a; color:#ffcc99; }
+body.dark .chip-yellow { background:#3a3a1a; border-color:#5a5a2a; color:#ffff99; }
+body.dark .chip-green { background:#1a3a1a; border-color:#2a5a2a; color:#99ff99; }
+body.dark .chip-tag { background:#1a2a3a; border-color:#2a4a5a; color:#99ccff; }
+
+
+
+
+
+
+
+/* ===== Generic modal styles (fix for bulk-tag-modal) ===== */
+.modal[aria-hidden="true"]{ display:none !important; }
+.modal{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:1200; /* acima do conteúdo */
+}
+.modal .backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.45);
+}
+.modal .dialog{
+  position:relative;
+  z-index:1;
+  width:min(520px,92vw);
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
+}
+/* close button in modal */
+.modal .close{
+  position:absolute;
+  top:10px;
+  right:10px;
+  border:none;
+  background:#f2f2f5;
+  width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:18px;
+}
+
+/* Dark mode variants */
+body.dark .modal .dialog{
+  background:var(--dark-card);
+  border:1px solid var(--dark-border);
+}

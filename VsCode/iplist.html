@@ -31,7 +31,7 @@
       <div class="user-area">
         <button id="btn-user" class="avatar" aria-haspopup="menu" aria-expanded="false">
           <img src="../Resources/Dashboard/Icon.png" class="avatar-icon" alt="User" />
-          <span class="avatar-caret">Down</span>
+          <span class="avatar-caret">▾</span>
         </button>
         <div id="menu-user" class="menu" role="menu" aria-hidden="true">
           <button class="menu-item" role="menuitem" data-action="settings">Settings</button>
@@ -123,14 +123,16 @@
 
           <div class="targets-empty" id="targets-empty">
             <h4>No targets saved yet.</h4>
-            <p class="muted">Add a host (IP/domain) or a network (CIDR). They'll appear later as quick options on the Scan page — or you can always type the IP directly.</p>
+            <p class="muted">Add a host (IP/domain) or a network (CIDR). They'll appear later as quick options on the
+              Scan page — or you can always type the IP directly.</p>
           </div>
 
           <div id="targets-list" class="targets-list"></div>
         </div>
 
         <!-- Add/Edit Target Popup -->
-        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog" aria-labelledby="iplist-modal-title">
+        <div id="iplist-modal" class="iplist-modal" aria-hidden="true" role="dialog"
+          aria-labelledby="iplist-modal-title">
           <div class="iplist-backdrop" data-close></div>
           <div class="iplist-dialog">
             <button class="iplist-close" data-close aria-label="Close">×</button>
@@ -152,7 +154,8 @@
 
               <div class="iplist-field">
                 <label class="iplist-label" for="iplist-value">Host/IP (or CIDR)</label>
-                <input id="iplist-value" class="iplist-input" placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
+                <input id="iplist-value" class="iplist-input"
+                  placeholder="e.g., 192.168.1.20 or example.com or 10.0.0.0/24" required />
                 <p class="iplist-help">IPv4, domain names, and CIDR ranges are accepted.</p>
               </div>
 
@@ -186,10 +189,7 @@
     </div>
   </div>
 
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
-  <script src="iplist.js"></script>
+  <script type="module" src="iplist.js"></script>
   <script>
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {

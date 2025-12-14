@@ -48,6 +48,7 @@ class NmapScanAPI {
     return await this._makeRequest('/presets');
   }
 
+  // MANTIDO: O método principal que inicia scans (Quick ou Deep dependendo do preset)
   async startScan(target, preset, userId, scanName = '') {
     return await this._makeRequest('/scan', {
       method: 'POST',
@@ -60,27 +61,8 @@ class NmapScanAPI {
     });
   }
 
-  async startDeepSingleScan(targetId, userId, scanName = '') {
-    return await this._makeRequest('/scan/deep-single', {
-      method: 'POST',
-      body: {
-        targetId,
-        userId,
-        scanName
-      }
-    });
-  }
-
-  async startDeepMultipleScan(targetIds, userId, scanName = '') {
-    return await this._makeRequest('/scan/deep-multiple', {
-      method: 'POST',
-      body: {
-        targetIds,
-        userId,
-        scanName
-      }
-    });
-  }
+  // REMOVIDO: startDeepSingleScan
+  // REMOVIDO: startDeepMultipleScan
 
   async getScanStatus(scanId) {
     return await this._makeRequest(`/scan/${scanId}`);
@@ -159,8 +141,8 @@ function getCurrentUserId() {
 const state = {
   targets: [],
   scans: [],
-  lastResult: null,
-  selectedTargets: [] // for deep multiple scans
+  lastResult: null
+  // REMOVIDO: selectedTargets
 };
 
 /* ====== PAGINATION MODULE ====== */
@@ -177,7 +159,7 @@ const pagination = {
     const { search, status, type } = this.filters;
     return scans.filter(scan => {
       const matchesSearch = (scan.targetValue.toLowerCase().includes(search.toLowerCase()) ||
-                           (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
+                             (scan.scan_name || '').toLowerCase().includes(search.toLowerCase()));
       const matchesStatus = !status || scan.status === status;
       const matchesType = !type || scan.type === type;
       return matchesSearch && matchesStatus && matchesType;
@@ -261,46 +243,61 @@ function saveTargets() {
 async function loadScans() {
   try {
     const userId = getCurrentUserId();
-    console.log('Current User ID:', userId);
-    console.log('Auth Data:', localStorage.getItem(AUTH_KEY));
+    console.log('Loading scans for user:', userId);
 
     const response = await nmapAPI.getUserScans(userId);
     console.log('API Response:', response);
 
     if (response && response.scans) {
-      // Convert API response to local model
-      const convertedScans = response.scans.map(scan => ({
-        id: scan.id,
-        targetValue: scan.target,
-        targetId: scan.target_ids ? scan.target_ids[0] : null,
-        targetIds: scan.target_ids || [],
-        type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
-        preset: scan.preset_used || scan.scan_type,
-        proto: 'TCP', // Default, can be adjusted if API provides this info
-        startedAt: scan.submitted_at ? new Date(scan.submitted_at._seconds * 1000).getTime() : Date.now(),
-        status: scan.status === 'complete' ? 'Completed' :
-          scan.status === 'ongoing' ? 'ongoing' : 'failed',
-        apiStatus: scan,
+      const convertedScans = response.scans.map(scan => {
+        
+        // --- CORREÇÃO DA DATA AQUI ---
+        // Esta lógica garante que a data funciona sempre
+        let startedAt = Date.now();
+        
+        if (scan.submitted_at) {
+            if (typeof scan.submitted_at === 'string') {
+                // Se vier como texto (ex: "2025-12-13T10:00...")
+                startedAt = new Date(scan.submitted_at).getTime();
+            } else if (scan.submitted_at._seconds) {
+                // Se vier como objeto Firestore { _seconds: ... }
+                startedAt = scan.submitted_at._seconds * 1000;
+            }
+        }
+        // -----------------------------
 
-        // QUICK SCAN SPECIFIC DATA
-        activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
-        totalHosts: scan.summary?.total_hosts || 0,
-        openPorts: [], // Will be populated from ScanResults
-        totalPorts: scan.summary?.open_ports_total || 0,
-        deviceTypes: scan.summary?.device_types || [],
-        scanDuration: scan.summary?.scan_duration || '',
+        return {
+          id: scan.id,
+          targetValue: scan.target,
+          type: scan.scan_type === 'quick_scan' ? 'quick' : 'deep',
+          preset: scan.preset_used || scan.scan_type,
+          proto: 'TCP',
+          
+          startedAt: startedAt, // Data corrigida
+          
+          status: scan.status === 'complete' ? 'Completed' :
+                  scan.status === 'ongoing' ? 'ongoing' : 'failed',
+          apiStatus: scan,
 
-        cveList: [],
-        cves: scan.summary?.vulnerabilities_total || 0,
-        user_id: scan.user_id,
+          // QUICK SCAN SPECIFIC DATA
+          activeHosts: scan.summary?.active_hosts || scan.summary?.total_hosts || 0,
+          totalHosts: scan.summary?.total_hosts || 0,
+          openPorts: [], 
+          totalPorts: scan.summary?.open_ports_total || 0,
+          deviceTypes: scan.summary?.device_types || [],
+          scanDuration: scan.summary?.scan_duration || '',
 
-        // additional fields
-        summary: scan.summary,
-        is_network_scan: scan.is_network_scan,
-        scan_name: scan.scan_name,
-        finished_at: scan.finished_at,
-        scan_mode: scan.target_ids ? (scan.target_ids.length > 1 ? 'deep-multiple' : 'deep-single') : 'normal'
-      }));
+          cveList: [],
+          cves: scan.summary?.vulnerabilities_total || 0,
+          user_id: scan.user_id,
+
+          summary: scan.summary,
+          is_network_scan: scan.is_network_scan,
+          scan_name: scan.scan_name,
+          finished_at: scan.finished_at,
+          scan_mode: 'normal' 
+        };
+      });
 
       return convertedScans;
     }
@@ -625,71 +622,22 @@ function processCompletedScan(scan, apiStatus) {
 /* ====== VIEW MANAGEMENT ====== */
 function showNewScanModal() {
   document.getElementById('modal-newscan').setAttribute('aria-hidden', 'false');
-  updateScanModeUI();
+  // REMOVIDO: updateScanModeUI()
+  // Garante que a secção principal está visível
+  const targetSection = document.getElementById('ns-target-section');
+  const scanTypeSection = document.getElementById('ns-scan-type-section');
+  if (targetSection) targetSection.style.display = 'block';
+  if (scanTypeSection) scanTypeSection.style.display = 'block';
+  
+  populateSavedTargetsDropdown();
 }
 
 function hideNewScanModal() {
   document.getElementById('modal-newscan').setAttribute('aria-hidden', 'true');
 }
 
-// update UI based on selected scan mode
-function updateScanModeUI() {
-  const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
-  const targetSection = document.getElementById('ns-target-section');
-  const targetSelectionSection = document.getElementById('ns-target-selection-section');
-  const scanTypeSection = document.getElementById('ns-scan-type-section');
-
-  // Hide all sections initially
-  if (targetSection) targetSection.style.display = 'none';
-  if (targetSelectionSection) targetSelectionSection.style.display = 'none';
-  if (scanTypeSection) scanTypeSection.style.display = 'none';
-
-  switch (scanMode) {
-    case 'normal':
-      if (targetSection) targetSection.style.display = 'block';
-      if (scanTypeSection) scanTypeSection.style.display = 'block';
-      populateSavedTargetsDropdown();
-      break;
-    case 'deep-single':
-      if (targetSelectionSection) targetSelectionSection.style.display = 'block';
-      populateTargetSelection();
-      break;
-    case 'deep-multiple':
-      if (targetSelectionSection) targetSelectionSection.style.display = 'block';
-      populateTargetSelection(true);
-      break;
-  }
-
-  updateStartEnabled();
-}
-
-// populate target selection list
-function populateTargetSelection(multiple = false) {
-  const container = document.getElementById('ns-target-selection-container');
-  if (!container) return;
-
-  const targets = state.targets || [];
-
-  if (targets.length === 0) {
-    container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">No targets available. Please add targets first.</div>';
-    return;
-  }
-
-  container.innerHTML = targets.map(target => `
-    <div class="target-selection-item">
-      <label class="checkbox-label">
-        <input type="${multiple ? 'checkbox' : 'radio'}" name="${multiple ? 'ns-selected-targets' : 'ns-selected-target'}" value="${target.id}" 
-               onchange="updateStartEnabled()">
-        <span class="checkmark"></span>
-        <div class="target-info">
-          <strong>${target.name || 'Unnamed Target'}</strong>
-          <span>${target.value}</span>
-          ${target.device_type ? `<small>${target.device_type}</small>` : ''}
-        </div>
-      </label>
-    </div>
-  `).join('');
-}
+// REMOVIDO: updateScanModeUI()
+// REMOVIDO: populateTargetSelection()
 
 function showActiveScanView(scanData = null) {
   const historyView = document.getElementById('view-scans-history');
@@ -708,7 +656,7 @@ function showActiveScanView(scanData = null) {
     loading.style.display = 'block';
     results.style.display = 'none';
     document.getElementById('loading-target').textContent =
-      scanData.targetValue || scanData.scan_name || 'Multiple Targets';
+      scanData.targetValue || scanData.scan_name || 'Target';
     animateProgress();
   }
 }
@@ -778,10 +726,8 @@ async function renderScansHistory() {
     const statusClass = scan.status === 'ongoing' ? 'ongoing' :
       scan.status === 'Completed' ? 'completed' : 'failed';
 
-    // Determine scan type display
+    // Simplificado para apenas Deep ou Quick
     let scanTypeDisplay = scan.type === 'deep' ? 'Deep Scan' : 'Quick Scan';
-    if (scan.scan_mode === 'deep-single') scanTypeDisplay = 'Deep Single';
-    if (scan.scan_mode === 'deep-multiple') scanTypeDisplay = `Deep Multiple (${scan.targetIds?.length || 0})`;
 
     return `
     <div class="scan-item" data-scan-id="${scan.id}">
@@ -871,38 +817,22 @@ function cvssToSeverity(score) {
 }
 
 /* ====== CREATE SCAN ====== */
-async function addScan({ targetValue, targetId = null, targetIds = [], type = "quick", proto = "TCP", scanMode = "normal", scanName = "" }) {
+// Lógica simplificada: removemos single-deep, multiple-deep e targetId/targetIds
+async function addScan({ targetValue, type = "quick", proto = "TCP", scanName = "" }) {
   try {
     const userId = getCurrentUserId();
-    let result;
-
-    if (scanMode === 'deep-single') {
-      if (!targetId) throw new Error('Target ID required for deep single scan');
-      result = await nmapAPI.startDeepSingleScan(targetId, userId, scanName);
-    } else if (scanMode === 'deep-multiple') {
-      if (!targetIds.length) throw new Error('At least one target required for deep multiple scan');
-      if (targetIds.length > 10) throw new Error('Maximum 10 targets allowed for deep multiple scan');
-      result = await nmapAPI.startDeepMultipleScan(targetIds, userId, scanName);
-    } else {
-      // normal scan
-      const presetMap = {
-        'quick': 'quick_scan',
-        'deep': 'deep_scan'
-      };
-      const preset = presetMap[type] || 'quick_scan';
-      result = await nmapAPI.startScan(targetValue, preset, userId, scanName);
-    }
+    
+    // Mapeamento simples: se a UI diz "deep", usamos o preset deep_scan, senão quick_scan
+    const preset = type === 'deep' ? 'deep_scan' : 'quick_scan';
+    
+    // Chamada única e simples para a API
+    const result = await nmapAPI.startScan(targetValue, preset, userId, scanName);
 
     const scan = {
       id: result.scanId,
-      targetId: scanMode === 'deep-single' ? targetId : null,
-      targetIds: scanMode === 'deep-multiple' ? targetIds : [],
-      targetValue: targetValue ||
-        (scanMode === 'deep-multiple' ? result.targets?.map(t => t.host).join(', ') : null) ||
-        result.target ||
-        'Multiple Targets',
-      type: scanMode.includes('deep') ? 'deep' : type,
-      preset: scanMode.includes('deep') ? 'deep_scan' : (type === 'deep' ? 'deep_scan' : 'quick_scan'),
+      targetValue: targetValue || result.target || 'Target',
+      type: type, // 'quick' ou 'deep'
+      preset: preset,
       proto,
       startedAt: Date.now(),
       status: "ongoing",
@@ -911,8 +841,8 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       cveList: [],
       cves: 0,
       user_id: userId,
-      scan_name: scanName || result.scan_name || `${scanMode} Scan`,
-      scan_mode: scanMode
+      scan_name: scanName || result.scan_name || `${type} Scan`,
+      scan_mode: 'normal'
     };
 
     // Add to local state and persist
@@ -936,10 +866,8 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
 
     const scan = {
       id: uid(),
-      targetId: scanMode === 'deep-single' ? targetId : null,
-      targetIds: scanMode === 'deep-multiple' ? targetIds : [],
       targetValue: targetValue || 'Demo Target',
-      type: scanMode.includes('deep') ? 'deep' : type,
+      type: type,
       proto,
       startedAt: Date.now(),
       status: "Completed",
@@ -948,8 +876,8 @@ async function addScan({ targetValue, targetId = null, targetIds = [], type = "q
       cves: cveList.length,
       apiError: true,
       user_id: userId,
-      scan_name: scanName || `Demo ${scanMode} Scan`,
-      scan_mode: scanMode
+      scan_name: scanName || `Demo ${type} Scan`,
+      scan_mode: 'normal'
     };
 
     state.scans.unshift(scan);
@@ -1280,9 +1208,7 @@ function fillQuickScanHostsTable(hosts) {
             <th>MAC Address</th>
             <th>Vendor</th>
             <th>Device Type</th>
-            <!--<th>Status</th>-->
-            <!--<th>Open Ports</th>-->
-          </tr>
+            </tr>
         </thead>
         <tbody>
           ${hosts.map(host => {
@@ -1307,9 +1233,7 @@ function fillQuickScanHostsTable(hosts) {
               <td><code>${mac}</code></td>
               <td>${vendor}</td>
               <td><span class="device-type">${deviceType}</span></td>
-              <!--<td><span class="${statusClass}">${statusText}</span></td>-->
-              <!--<td>${openPorts}</td>-->
-            </tr>
+              </tr>
           `}).join('')}
         </tbody>
       </table>
@@ -1472,10 +1396,8 @@ function fillPortsTable(host) {
       </table>
     </div>
     
-    <!-- PLACEHOLDERS FOR DETAILED SERVER ANALYSIS -->
     <div id="risk-analysis-details" style="margin-top:18px;"></div>
     <div id="detailed-cves" style="margin-top:18px;"></div>
-    <!-- Mostrar recomendações de segurança se disponíveis -->
     ${host.risk_assessment && host.risk_assessment.findings && host.risk_assessment.findings.length > 0 ? `
       <div class="section" style="margin-top: 20px;">
         <div class="section-header">
@@ -1749,25 +1671,11 @@ function handleClearTrivial() {
 function updateStartEnabled() {
   const tos = document.getElementById("ns-tos");
   const startBtn = document.getElementById("ns-start");
-  const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
-
-  let hasValidInput = false;
-
-  switch (scanMode) {
-    case 'normal':
-      const targetInp = document.getElementById("ns-target");
-      const chooseSel = document.getElementById("ns-choose");
-      hasValidInput = !!(targetInp?.value.trim() || chooseSel?.value);
-      break;
-    case 'deep-single':
-      const selectedSingle = document.querySelector('input[name="ns-selected-target"]:checked');
-      hasValidInput = !!selectedSingle;
-      break;
-    case 'deep-multiple':
-      const selectedMultiple = document.querySelectorAll('input[name="ns-selected-targets"]:checked');
-      hasValidInput = selectedMultiple.length > 0 && selectedMultiple.length <= 10;
-      break;
-  }
+  
+  // Simplificado para apenas checar input ou dropdown
+  const targetInp = document.getElementById("ns-target");
+  const chooseSel = document.getElementById("ns-choose");
+  const hasValidInput = !!(targetInp?.value.trim() || chooseSel?.value);
 
   const ok = !!(tos?.checked && hasValidInput);
   if (startBtn) startBtn.disabled = !ok;
@@ -1796,9 +1704,37 @@ function exportScanToCSV(scanId) {
   link.click();
   document.body.removeChild(link);
 }
+
+/* ====== AUTO-FILTER FROM URL ====== */
+function checkUrlForTarget() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const target = urlParams.get('target');
+    
+    if (target) {
+        console.log(`[Auto-Filter] Found target in URL: ${target}`);
+        const searchInput = document.getElementById('history-filter-search');
+        
+        // Preencher input e atualizar estado do filtro
+        if (searchInput) {
+            searchInput.value = target;
+            pagination.filters.search = target;
+            pagination.currentPage = 1;
+            
+            // Forçar renderização imediata com o filtro aplicado
+            renderScansHistory();
+        }
+    }
+}
+
 /* ====== INIT ====== */
 async function init() {
   if (!requireAuth()) return;
+
+  // Carregar scans da Firebase no início
+  state.scans = await loadScans();
+
+  // ADICIONA ESTA LINHA AQUI:
+  checkUrlForTarget();
 
   // DARK MODE
   const themeQuick = localStorage.getItem("vulnerai.theme");
@@ -1834,11 +1770,7 @@ async function init() {
     }
   });
 
-  // NOVO: Event listeners para modos de scan
-  const scanModeRadios = document.querySelectorAll('input[name="ns-scan-mode"]');
-  scanModeRadios.forEach(radio => {
-    radio.addEventListener('change', updateScanModeUI);
-  });
+  // Event listeners para modos de scan (REMOVIDO pois não temos mais modos complexos)
 
   /* USER MENU */
   const userBtn = document.getElementById("btn-user");
@@ -1928,47 +1860,19 @@ async function init() {
     e.preventDefault();
     if (!tos?.checked) return alert('Please accept the Terms first.');
 
-    const scanMode = document.querySelector('input[name="ns-scan-mode"]:checked')?.value || 'normal';
+    // Simplificado: ignoramos scanMode e pegamos apenas o tipo (quick/deep)
     const type = (document.querySelector('input[name="ns-type"]:checked')?.value) || 'quick';
     const proto = (document.querySelector('input[name="ns-proto"]:checked')?.value) || 'TCP';
     const scanName = scanNameInp?.value.trim() || '';
 
-    let targetValue = '';
-    let targetId = null;
-    let targetIds = [];
+    let targetValue = (targetInp?.value || '').trim();
 
-    // Obter dados baseado no modo de scan
-    switch (scanMode) {
-      case 'normal':
-        targetValue = (targetInp?.value || '').trim();
-        const chosenId = chooseSel?.value || null;
-        if (!targetValue && chosenId) {
-          const t = state.targets.find(x => x.id === chosenId);
-          targetValue = t?.value || '';
-        }
-        targetId = chosenId;
-        break;
-
-      case 'deep-single':
-        const selectedSingle = document.querySelector('input[name="ns-selected-target"]:checked');
-        if (!selectedSingle) return alert('Please select a target');
-        targetId = selectedSingle.value;
-        const targetSingle = state.targets.find(t => t.id === targetId);
-        targetValue = targetSingle?.value || '';
-        break;
-
-      case 'deep-multiple':
-        const selectedMultiple = document.querySelectorAll('input[name="ns-selected-targets"]:checked');
-        if (selectedMultiple.length === 0) return alert('Please select at least one target');
-        if (selectedMultiple.length > 10) return alert('Please select maximum 10 targets');
-
-        targetIds = Array.from(selectedMultiple).map(input => input.value);
-        const targetsMultiple = state.targets.filter(t => targetIds.includes(t.id));
-        targetValue = targetsMultiple.map(t => t.value).join(', ');
-        break;
+    if (!targetValue && chooseSel?.value) {
+      const t = state.targets.find(x => x.id === chooseSel.value);
+      targetValue = t?.value || '';
     }
 
-    if (!targetValue && !targetId && targetIds.length === 0) {
+    if (!targetValue) {
       return alert('Please choose or type a target.');
     }
 
@@ -1978,11 +1882,8 @@ async function init() {
     try {
       await addScan({
         targetValue,
-        targetId,
-        targetIds,
         type,
         proto,
-        scanMode,
         scanName
       });
     } catch (error) {
@@ -2095,7 +1996,7 @@ function updateLocalScanState(scanId, apiData) {
   }
 }
 
-// 🆕 NOVA FUNÇÃO: Configurar rescan com dados pré-preenchidos
+// 🆕 NOVA FUNÇÃO: Configurar rescan (Simplificado)
 async function setupRescan(scanId) {
   try {
     // 1. Buscar dados do scan original
@@ -2115,7 +2016,7 @@ async function setupRescan(scanId) {
     // 3. Pré-preencher os campos baseado no scan original
     setTimeout(() => {
       prefillRescanForm(originalScan);
-    }, 100); // Pequeno delay para garantir que o modal está renderizado
+    }, 100);
 
   } catch (error) {
     console.error('Error setting up rescan:', error);
@@ -2123,7 +2024,7 @@ async function setupRescan(scanId) {
   }
 }
 
-// 🆕 FUNÇÃO: Pré-preencher o formulário com dados do scan original
+// 🆕 FUNÇÃO: Pré-preencher o formulário (Simplificada para modo único)
 function prefillRescanForm(originalScan) {
   console.log('📝 Prefilling form with:', originalScan);
 
@@ -2134,41 +2035,7 @@ function prefillRescanForm(originalScan) {
     scanNameInput.value = `Rescan of ${originalName}`;
   }
 
-  // 2. Determinar modo de scan baseado no original
-  let scanMode = 'normal';
-  if (originalScan.scan_mode === 'deep-single') {
-    scanMode = 'deep-single';
-  } else if (originalScan.scan_mode === 'deep-multiple') {
-    scanMode = 'deep-multiple';
-  }
-
-  // 3. Selecionar o modo de scan correto
-  const scanModeRadio = document.querySelector(`input[name="ns-scan-mode"][value="${scanMode}"]`);
-  if (scanModeRadio) {
-    scanModeRadio.checked = true;
-    updateScanModeUI(); // Atualizar UI baseado no modo
-  }
-
-  // 4. Pré-preencher baseado no modo de scan
-  setTimeout(() => {
-    switch (scanMode) {
-      case 'normal':
-        prefillNormalRescan(originalScan);
-        break;
-      case 'deep-single':
-        prefillDeepSingleRescan(originalScan);
-        break;
-      case 'deep-multiple':
-        prefillDeepMultipleRescan(originalScan);
-        break;
-    }
-    
-    updateStartEnabled(); // Atualizar estado do botão Start
-  }, 200);
-}
-
-// 🆕 FUNÇÃO: Pré-preencher para scan normal
-function prefillNormalRescan(originalScan) {
+  // 2. Target
   const targetInput = document.getElementById('ns-target');
   const chooseSelect = document.getElementById('ns-choose');
   
@@ -2176,53 +2043,22 @@ function prefillNormalRescan(originalScan) {
     targetInput.value = originalScan.targetValue;
   }
   
-  // Tentar selecionar no dropdown de targets salvos
+  // Tentar selecionar no dropdown se disponível
   if (chooseSelect && originalScan.targetId) {
     chooseSelect.value = originalScan.targetId;
   }
 
-  // Selecionar tipo de scan (quick/deep)
+  // 3. Tipo (Quick/Deep)
   const scanType = originalScan.type === 'deep' ? 'deep' : 'quick';
   const scanTypeRadio = document.querySelector(`input[name="ns-type"][value="${scanType}"]`);
-  if (scanTypeRadio) {
-    scanTypeRadio.checked = true;
-  }
+  if (scanTypeRadio) scanTypeRadio.checked = true;
 
-  // Selecionar protocolo
+  // 4. Protocolo
   const protoRadio = document.querySelector(`input[name="ns-proto"][value="${originalScan.proto || 'TCP'}"]`);
-  if (protoRadio) {
-    protoRadio.checked = true;
-  }
-}
+  if (protoRadio) protoRadio.checked = true;
 
-// 🆕 FUNÇÃO: Pré-preencher para deep single
-function prefillDeepSingleRescan(originalScan) {
-  if (originalScan.targetId) {
-    // Selecionar o target no radio button
-    setTimeout(() => {
-      const targetRadio = document.querySelector(`input[name="ns-selected-target"][value="${originalScan.targetId}"]`);
-      if (targetRadio) {
-        targetRadio.checked = true;
-      }
-    }, 300); // Dar tempo para a UI atualizar
-  }
+  updateStartEnabled();
 }
-
-// 🆕 FUNÇÃO: Pré-preencher para deep multiple
-function prefillDeepMultipleRescan(originalScan) {
-  if (originalScan.targetIds && originalScan.targetIds.length > 0) {
-    // Selecionar os targets nos checkboxes
-    setTimeout(() => {
-      originalScan.targetIds.forEach(targetId => {
-        const targetCheckbox = document.querySelector(`input[name="ns-selected-targets"][value="${targetId}"]`);
-        if (targetCheckbox) {
-          targetCheckbox.checked = true;
-        }
-      });
-    }, 300); // Dar tempo para a UI atualizar
-  }
-}
-
 
   /* SCANS CONTROLS */
   const btnRefresh = document.getElementById("scan-refresh");
