@@ -1,60 +1,115 @@
 services:
-  # --- 1. Backend API (O teu servidor Node.js/Nmap) ---
+  # =========================================
+  # 1. OS TRABALHADORES (Workers)
+  # =========================================
   api:
     build:
       context: ./API
       dockerfile: Dockerfile
-    # Se tiveres o ficheiro .env com o JSON, descomenta isto:
-    # env_file:
-    #   - .env
-    deploy:
-      replicas: 3
-      restart_policy:
-        condition: on-failure
-    networks:
-      - vulnerai-net
     environment:
       - PORT=3000
     volumes:
       - ./API/keys:/app/keys
+    deploy:
+      replicas: 3
+    networks:
+      - vulnerai-net
 
-  # --- 2. Website Principal (Pasta VsCode) ---
   website:
     image: nginx:alpine
     volumes:
-      # Mapeia a pasta "VsCode" para a raiz do servidor web
       - ./VsCode:/usr/share/nginx/html:ro
-    networks:
-      - vulnerai-net
     deploy:
       replicas: 2
-      restart_policy:
-        condition: on-failure
+    networks:
+      - vulnerai-net
 
-  # --- 3. Recursos/Assets (Pasta Resources) ---
   assets:
     image: nginx:alpine
     volumes:
-      # Mapeia a pasta "Resources" para a raiz deste servidor
       - ./Resources:/usr/share/nginx/html:ro
-    networks:
-      - vulnerai-net
     deploy:
       replicas: 2
-      restart_policy:
-        condition: on-failure
+    networks:
+      - vulnerai-net
 
-  # --- 4. Load Balancer (O Porteiro) ---
-  loadbalancer:
+  # =========================================
+  # 2. OS LOAD BALANCERS INTERNOS (Ativo/Passivo)
+  # =========================================
+
+  # --- API ---
+  lb-api-primary:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-api.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    networks:
+      - vulnerai-net
+
+  lb-api-backup:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-api.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    networks:
+      - vulnerai-net
+
+  # --- WEBSITE ---
+  lb-web-primary:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-website.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - website
+    networks:
+      - vulnerai-net
+
+  lb-web-backup:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-website.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - website
+    networks:
+      - vulnerai-net
+
+  # --- ASSETS ---
+  lb-res-primary:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-assets.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - assets
+    networks:
+      - vulnerai-net
+
+  lb-res-backup:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb-assets.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - assets
+    networks:
+      - vulnerai-net
+
+  # =========================================
+  # 3. O INGRESS (Porteiro Principal)
+  # =========================================
+  ingress:
     image: nginx:latest
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ingress.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - api
-      - website
-      - assets
+      - lb-api-primary
+      - lb-api-backup
+      - lb-web-primary
+      - lb-web-backup
+      - lb-res-primary
+      - lb-res-backup
     networks:
       - vulnerai-net
 
