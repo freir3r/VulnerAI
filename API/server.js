@@ -3836,17 +3836,745 @@ app.get('/scan/:scanId/risk-analysis', async (req, res) => {
     res.status(500).json({ error: 'Failed to get risk analysis', details: err.message });
   }
 });
-
-// Global error handler (centralized)
-app.use((err, req, res, next) => {
-  try {
-    console.error('Unhandled error:', err && (err.stack || err));
-  } catch (e) {
-    console.error('Error while logging an error:', e);
+// ===== HEURISTICAS DE IA PARA A ENTREGA FINAL =====
+class AIHeuristicEngine {
+  constructor() {
+    // Fatores de ponderação (ajustáveis)
+    this.WEIGHTS = {
+      cvssScore: 0.4,
+      cveAge: 0.25,
+      networkExposure: 0.20,
+      exploitAvailable: 0.15,
+      serviceCriticality: 0.10
+    };
   }
-  if (res.headersSent) return next(err);
-  res.status(err && err.status ? err.status : 500).json({ error: (err && err.message) ? err.message : 'Internal Server Error' });
+
+  // Calcular probabilidade baseada na idade do CVE
+  calcularProbabilidade(cveYear) {
+    const anoAtual = new Date().getFullYear();
+    const diffAnos = anoAtual - cveYear;
+
+    // Probabilidade decrescente com a idade
+    if (diffAnos === 0) return 1.0;   // Publicado este ano → probabilidade alta
+    if (diffAnos === 1) return 0.7;   // Ano passado → média
+    if (diffAnos === 2) return 0.4;   // Há dois anos → baixa
+    if (diffAnos === 3) return 0.3;   // 3 anos → muito baixa
+    if (diffAnos === 4) return 0.2;   // 4 anos
+    return 0.1;                       // Mais de 4 anos → probabilidade mínima
+  }
+
+  // Calcular exposição de rede baseada em portas abertas
+  calcularExposicaoRede(ports = []) {
+    let exposureScore = 0;
+    const portasAbertas = ports.filter(p => p.state === "open");
+
+    if (portasAbertas.length === 0) return 0;
+
+    // Base: número de portas abertas
+    exposureScore += Math.min(portasAbertas.length * 0.3, 3.0);
+
+    // Serviços críticos/expostos
+    const criticalServices = {
+      'http': 1.5,    // HTTP sem TLS
+      'https': 0.5,   // HTTPS é mais seguro
+      'ssh': 1.0,
+      'telnet': 2.0,
+      'ftp': 1.5,
+      'rdp': 1.8,
+      'vnc': 1.7,
+      'smb': 1.3,
+      'mysql': 1.6,
+      'postgresql': 1.6,
+      'oracle': 1.7
+    };
+
+    // Análise detalhada por porta
+    portasAbertas.forEach(port => {
+      const serviceName = (port.service?.name || '').toLowerCase();
+      const summary = (port.summary || '').toLowerCase();
+
+      // Serviços críticos
+      if (criticalServices[serviceName]) {
+        exposureScore += criticalServices[serviceName];
+      }
+
+      // Verificar versões desatualizadas
+      if (port.service?.version) {
+        const version = port.service.version;
+
+        // Heurística para versões antigas
+        if (this.isOutdatedVersion(serviceName, version)) {
+          exposureScore += 1.0;
+        }
+      } else if (summary.includes('unknown') || summary.includes('n/a')) {
+        // Serviço desconhecido → maior risco
+        exposureScore += 0.8;
+      }
+
+      // HTTP sem TLS/SSL
+      if ((serviceName === 'http' || summary.includes('http')) &&
+        !summary.includes('https') &&
+        !port.service?.tunnel) {
+        exposureScore += 1.5;
+      }
+    });
+
+    // Normalizar para escala 0-10
+    return Math.min(10, Number(exposureScore.toFixed(2)));
+  }
+
+  // Verificar se versão está desatualizada
+  isOutdatedVersion(service, version) {
+    const versionPattern = version.match(/(\d+\.\d+(\.\d+)?)/);
+    if (!versionPattern) return false;
+
+    const versionNum = parseFloat(versionPattern[1]);
+    const thresholds = {
+      'nginx': 1.18,
+      'apache': 2.4,
+      'openssh': 8.0,
+      'mysql': 8.0,
+      'postgresql': 13.0,
+      'node.js': 16.0
+    };
+
+    for (const [serviceName, minVersion] of Object.entries(thresholds)) {
+      if (service.includes(serviceName) && versionNum < minVersion) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Calcular heurística completa para um CVE específico
+  calcularHeuristicaCVE(cve, hostData) {
+    const cvssScore = cve.CVSS?.score || 0;
+    const cveYear = cve.year || this.extractYearFromCVE(cve.cve_id);
+    const exploitAvailable = cve.exploit_available || false;
+
+    // Fatores calculados
+    const fatorIdade = this.calcularProbabilidade(cveYear);
+    const fatorExposicao = this.calcularExposicaoRede(hostData.ports) / 10; // Normalizar 0-1
+    const fatorExploit = exploitAvailable ? 1.0 : 0.2;
+
+    // Pontuação base CVSS (normalizada 0-10)
+    const scoreCVSS = (cvssScore / 10) * 10;
+
+    // Cálculo da heurística ponderada
+    const heuristicScore =
+      (scoreCVSS * this.WEIGHTS.cvssScore) +
+      (fatorIdade * 10 * this.WEIGHTS.cveAge) +
+      (fatorExposicao * 10 * this.WEIGHTS.networkExposure) +
+      (fatorExploit * 10 * this.WEIGHTS.exploitAvailable);
+
+    return {
+      score: Math.min(100, heuristicScore),
+      factors: {
+        cvss: scoreCVSS,
+        cveAge: fatorIdade * 10,
+        networkExposure: fatorExposicao * 10,
+        exploitAvailable: fatorExploit * 10,
+        serviceCriticality: this.calcularCriticidadeServico(hostData.ports)
+      },
+      breakdown: {
+        cvssContribution: (scoreCVSS * this.WEIGHTS.cvssScore),
+        ageContribution: (fatorIdade * 10 * this.WEIGHTS.cveAge),
+        exposureContribution: (fatorExposicao * 10 * this.WEIGHTS.networkExposure),
+        exploitContribution: (fatorExploit * 10 * this.WEIGHTS.exploitAvailable)
+      }
+    };
+  }
+
+  // Extrair ano do CVE
+  extractYearFromCVE(cveId) {
+    const match = cveId.match(/CVE-(\d{4})-\d+/);
+    return match ? parseInt(match[1]) : new Date().getFullYear();
+  }
+
+  // Calcular criticidade do serviço
+  calcularCriticidadeServico(ports) {
+    let criticality = 0;
+    const criticalServices = ['ssh', 'rdp', 'vnc', 'mysql', 'postgresql', 'oracle', 'sql'];
+
+    ports.forEach(port => {
+      const serviceName = (port.service?.name || '').toLowerCase();
+
+      // Serviços de administração
+      if (criticalServices.some(cs => serviceName.includes(cs))) {
+        criticality += 2.0;
+      }
+
+      // Serviços web
+      if (serviceName.includes('http') || serviceName.includes('web')) {
+        criticality += 1.0;
+      }
+
+      // Serviços de banco de dados
+      if (serviceName.includes('sql') || serviceName.includes('db')) {
+        criticality += 1.5;
+      }
+    });
+
+    return Math.min(10, criticality);
+  }
+
+  // Gerar recomendação priorizada com base nas heurísticas
+  gerarRecomendacaoPriorizada(cveAnalysis, hostData) {
+    const heuristic = this.calcularHeuristicaCVE(cveAnalysis, hostData);
+    const cvssScore = cveAnalysis.CVSS?.score || 0;
+
+    // Determinar urgência baseada na heurística
+    let urgency = 'LOW';
+    let timeframe = '30 dias';
+
+    if (heuristic.score >= 80) {
+      urgency = 'CRITICAL';
+      timeframe = 'IMEDIATO (24h)';
+    } else if (heuristic.score >= 60) {
+      urgency = 'HIGH';
+      timeframe = '7 dias';
+    } else if (heuristic.score >= 40) {
+      urgency = 'MEDIUM';
+      timeframe = '14 dias';
+    } else if (heuristic.score >= 20) {
+      urgency = 'LOW';
+      timeframe = '30 dias';
+    }
+
+    // Gerar recomendação específica
+    const recommendation = {
+      cve_id: cveAnalysis.cve_id,
+      host: hostData.host,
+      hostname: hostData.hostname,
+      urgency: urgency,
+      timeframe: timeframe,
+      heuristic_score: Math.round(heuristic.score),
+      cvss_score: cvssScore,
+      exploit_available: cveAnalysis.exploit_available || false,
+      factors: heuristic.factors,
+      action_items: this.gerarItensAcao(cveAnalysis, hostData, heuristic),
+      justification: this.gerarJustificativa(heuristic, cveAnalysis, hostData)
+    };
+
+    return recommendation;
+  }
+
+  // Gerar itens de ação específicos
+  gerarItensAcao(cve, hostData, heuristic) {
+    const actions = [];
+    const portasAfetadas = this.identificarPortasAfetadas(cve, hostData);
+
+    // Ação 1: Atualização/Patches
+    if (heuristic.factors.cveAge > 5) {
+      actions.push({
+        priority: 1,
+        action: 'Aplicar patch de segurança',
+        details: `CVE ${cve.cve_id} tem ${new Date().getFullYear() - cve.year} anos - patch provavelmente disponível`,
+        estimated_time: '2-4 horas'
+      });
+    }
+
+    // Ação 2: Workarounds/Compensação
+    if (heuristic.factors.exploitAvailable > 5) {
+      actions.push({
+        priority: 2,
+        action: 'Implementar workaround temporário',
+        details: 'Exploit conhecido disponível - aplicar compensações até patch estar disponível',
+        estimated_time: '1-2 horas'
+      });
+    }
+
+    // Ação 3: Reduzir superfície de ataque
+    if (heuristic.factors.networkExposure > 6 && portasAfetadas.length > 0) {
+      actions.push({
+        priority: 3,
+        action: 'Restringir acesso às portas afetadas',
+        details: `Portas ${portasAfetadas.join(', ')} expostas na rede`,
+        estimated_time: '30 minutos'
+      });
+    }
+
+    // Ação 4: Monitoramento
+    actions.push({
+      priority: 4,
+      action: 'Aumentar monitoramento',
+      details: `Monitorar tráfego nas portas afetadas e logs de sistema`,
+      estimated_time: 'Contínuo'
+    });
+
+    return actions.sort((a, b) => a.priority - b.priority);
+  }
+
+  // Identificar portas afetadas por um CVE
+  identificarPortasAfetadas(cve, hostData) {
+    const affectedPorts = [];
+
+    hostData.ports?.forEach(port => {
+      // Verificar se o serviço na porta é afetado pelo CVE
+      if (port.cves?.some(pcve => pcve.cve_id === cve.cve_id)) {
+        affectedPorts.push(port.port);
+      }
+    });
+
+    return affectedPorts;
+  }
+
+  // Gerar justificativa para a priorização
+  gerarJustificativa(heuristic, cve, hostData) {
+    const justifications = [];
+
+    // Justificar baseado no CVSS
+    if (heuristic.factors.cvss >= 9) {
+      justifications.push('CVSS CRÍTICO (>= 9.0)');
+    } else if (heuristic.factors.cvss >= 7) {
+      justifications.push('CVSS ALTO (>= 7.0)');
+    }
+
+    // Justificar baseado na idade
+    const age = new Date().getFullYear() - cve.year;
+    if (age <= 1) {
+      justifications.push('CVE RECENTE (≤ 1 ano)');
+    }
+
+    // Justificar baseado em exploit
+    if (cve.exploit_available) {
+      justifications.push('EXPLOIT PÚBLICO DISPONÍVEL');
+    }
+
+    // Justificar baseado na exposição
+    if (heuristic.factors.networkExposure >= 7) {
+      justifications.push('ALTA EXPOSIÇÃO NA REDE');
+    }
+
+    return justifications.join(' | ');
+  }
+
+  // Analisar todos os CVEs de um host e priorizá-los
+  analisarEPriorizarCVEs(hostData) {
+    const cves = hostData.foundCVEs || [];
+
+    if (cves.length === 0) {
+      return {
+        host: hostData.host,
+        hostname: hostData.hostname,
+        total_cves: 0,
+        prioritized_cves: [],
+        overall_heuristic_score: 0
+      };
+    }
+
+    // Analisar cada CVE
+    const analyzedCVEs = cves.map(cve => {
+      const analysis = this.calcularHeuristicaCVE(cve, hostData);
+      const recommendation = this.gerarRecomendacaoPriorizada(cve, hostData);
+
+      return {
+        ...cve,
+        heuristic_analysis: analysis,
+        recommendation: recommendation
+      };
+    });
+
+    // Ordenar por score heurístico (maior primeiro)
+    analyzedCVEs.sort((a, b) =>
+      b.heuristic_analysis.score - a.heuristic_analysis.score
+    );
+
+    // Calcular score geral do host
+    const overallScore = analyzedCVEs.length > 0
+      ? analyzedCVEs.reduce((sum, cve) => sum + cve.heuristic_analysis.score, 0) / analyzedCVEs.length
+      : 0;
+
+    return {
+      host: hostData.host,
+      hostname: hostData.hostname,
+      total_cves: cves.length,
+      overall_heuristic_score: Math.round(overallScore),
+      prioritized_cves: analyzedCVEs.slice(0, 10), // Top 10 mais críticos
+      summary_by_urgency: this.gerarSumarioUrgencia(analyzedCVEs)
+    };
+  }
+
+  // Gerar sumário por urgência
+  gerarSumarioUrgencia(analyzedCVEs) {
+    const summary = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0
+    };
+
+    analyzedCVEs.forEach(cve => {
+      const urgency = cve.recommendation?.urgency || 'LOW';
+      if (summary.hasOwnProperty(urgency)) {
+        summary[urgency]++;
+      }
+    });
+
+    return summary;
+  }
+
+  // Integrar com o RiskAssessmentExpert existente
+  integrarComRiskAssessment(riskExpertResults) {
+    const enhancedResults = {
+      ...riskExpertResults,
+      ai_heuristic_analysis: {}
+    };
+
+    // Aplicar heurísticas a cada host
+    if (riskExpertResults.assessedHosts) {
+      enhancedResults.assessedHosts = riskExpertResults.assessedHosts.map(host => {
+        const heuristicAnalysis = this.analisarEPriorizarCVEs(host);
+
+        return {
+          ...host,
+          ai_heuristic_analysis: heuristicAnalysis,
+          // Atualizar risco final com base nas heurísticas
+          enhanced_finalRisk: this.atualizarRiscoComHeuristica(
+            host.finalRisk,
+            heuristicAnalysis.overall_heuristic_score
+          )
+        };
+      });
+    }
+
+    // Recalcular estatísticas gerais
+    enhancedResults.ai_heuristic_analysis = this.calcularEstatisticasHeuristicas(
+      enhancedResults.assessedHosts
+    );
+
+    return enhancedResults;
+  }
+
+  // Atualizar risco final com base nas heurísticas
+  atualizarRiscoComHeuristica(originalRisk, heuristicScore) {
+    const riskLevels = {
+      'INFO': 0,
+      'LOW': 20,
+      'MEDIUM': 40,
+      'HIGH': 60,
+      'CRITICAL': 80
+    };
+
+    // Se a heurística indica risco maior, ajustar
+    if (heuristicScore > riskLevels[originalRisk] + 15) {
+      // Subir um nível
+      const levels = ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const currentIndex = levels.indexOf(originalRisk);
+      if (currentIndex < levels.length - 1) {
+        return levels[currentIndex + 1];
+      }
+    }
+
+    return originalRisk;
+  }
+
+  // Calcular estatísticas heurísticas
+  calcularEstatisticasHeuristicas(hosts) {
+    const hostsWithHeuristics = hosts.filter(h => h.ai_heuristic_analysis);
+
+    if (hostsWithHeuristics.length === 0) {
+      return null;
+    }
+
+    const totalHeuristicScore = hostsWithHeuristics.reduce(
+      (sum, h) => sum + (h.ai_heuristic_analysis.overall_heuristic_score || 0),
+      0
+    );
+
+    const averageHeuristicScore = totalHeuristicScore / hostsWithHeuristics.length;
+
+    // Contar CVEs por urgência
+    const urgencySummary = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0
+    };
+
+    hostsWithHeuristics.forEach(host => {
+      const summary = host.ai_heuristic_analysis.summary_by_urgency;
+      if (summary) {
+        Object.keys(urgencySummary).forEach(key => {
+          urgencySummary[key] += summary[key] || 0;
+        });
+      }
+    });
+
+    // Identificar top 5 CVEs mais críticos
+    const allCVEs = [];
+    hostsWithHeuristics.forEach(host => {
+      if (host.ai_heuristic_analysis.prioritized_cves) {
+        host.ai_heuristic_analysis.prioritized_cves.forEach(cve => {
+          allCVEs.push({
+            ...cve,
+            host: host.host,
+            hostname: host.hostname
+          });
+        });
+      }
+    });
+
+    allCVEs.sort((a, b) =>
+      (b.heuristic_analysis?.score || 0) - (a.heuristic_analysis?.score || 0)
+    );
+
+    return {
+      total_hosts_analyzed: hostsWithHeuristics.length,
+      average_heuristic_score: Math.round(averageHeuristicScore * 100) / 100,
+      total_critical_cves: urgencySummary.CRITICAL,
+      total_high_cves: urgencySummary.HIGH,
+      urgency_summary: urgencySummary,
+      top_critical_cves: allCVEs.slice(0, 5).map(cve => ({
+        cve_id: cve.cve_id,
+        heuristic_score: cve.heuristic_analysis?.score || 0,
+        cvss_score: cve.CVSS?.score || 0,
+        host: cve.host,
+        urgency: cve.recommendation?.urgency || 'UNKNOWN'
+      })),
+      risk_level_distribution: this.calcularDistribuicaoRisco(hostsWithHeuristics)
+    };
+  }
+
+  // Calcular distribuição de risco
+  calcularDistribuicaoRisco(hosts) {
+    const distribution = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0
+    };
+
+    hosts.forEach(host => {
+      const riskLevel = host.enhanced_finalRisk || host.finalRisk;
+      if (distribution.hasOwnProperty(riskLevel)) {
+        distribution[riskLevel]++;
+      }
+    });
+
+    return distribution;
+  }
+
+  // Método para gerar recomendações inteligentes
+  gerarRecomendacoesInteligentes(enhancedResults) {
+    const recommendations = [];
+
+    enhancedResults.assessedHosts?.forEach(host => {
+      if (host.ai_heuristic_analysis?.prioritized_cves) {
+        host.ai_heuristic_analysis.prioritized_cves.forEach(cve => {
+          if (cve.recommendation?.urgency === 'CRITICAL') {
+            recommendations.push({
+              type: 'CRITICAL_CVE',
+              host: host.host,
+              hostname: host.hostname,
+              cve_id: cve.cve_id,
+              heuristic_score: cve.heuristic_analysis?.score || 0,
+              action: `Patch imediato para ${cve.cve_id}`,
+              justification: cve.recommendation?.justification,
+              timeframe: cve.recommendation?.timeframe,
+              estimated_effort: 'Alto',
+              business_impact: 'Crítico'
+            });
+          }
+        });
+      }
+    });
+
+    return recommendations.sort((a, b) => b.heuristic_score - a.heuristic_score);
+  }
+
+  // Método para gerar resumo executivo
+  gerarResumoExecutivo(enhancedResults) {
+    const aiAnalysis = enhancedResults.ai_heuristic_analysis;
+
+    if (!aiAnalysis) {
+      return { error: 'No AI analysis available' };
+    }
+
+    return {
+      overall_risk_score: aiAnalysis.average_heuristic_score,
+      risk_level: this.determinarNivelRiscoGeral(aiAnalysis.average_heuristic_score),
+      critical_findings: aiAnalysis.total_critical_cves,
+      high_priority_items: aiAnalysis.total_high_cves,
+      top_concerns: aiAnalysis.top_critical_cves?.map(cve => ({
+        cve: cve.cve_id,
+        risk_score: cve.heuristic_score,
+        affected_host: cve.host
+      })),
+      recommended_actions: [
+        {
+          priority: 1,
+          action: 'Address critical CVEs',
+          count: aiAnalysis.total_critical_cves
+        },
+        {
+          priority: 2,
+          action: 'Review high exposure hosts',
+          count: enhancedResults.assessedHosts?.filter(h =>
+            h.ai_heuristic_analysis?.overall_heuristic_score >= 70
+          ).length || 0
+        }
+      ],
+      timeline_recommendation: this.recomendarTimeline(aiAnalysis)
+    };
+  }
+
+  // Determinar nível de risco geral
+  determinarNivelRiscoGeral(score) {
+    if (score >= 80) return 'CRÍTICO';
+    if (score >= 60) return 'ALTO';
+    if (score >= 40) return 'MÉDIO';
+    if (score >= 20) return 'BAIXO';
+    return 'MÍNIMO';
+  }
+
+  // Recomendar timeline
+  recomendarTimeline(aiAnalysis) {
+    if (aiAnalysis.total_critical_cves > 0) {
+      return 'AÇÃO IMEDIATA REQUERIDA (dentro de 24h)';
+    }
+    if (aiAnalysis.total_high_cves > 5) {
+      return 'AÇÃO PRIORITÁRIA (dentro de 7 dias)';
+    }
+    return 'AÇÃO PLANEJADA (dentro de 30 dias)';
+  }
+} // Fim da classe AIHeuristicEngine
+
+// ===== ADICIONAR MÉTODO AO RiskAssessmentExpert =====
+RiskAssessmentExpert.prototype.enhanceWithAIHeuristics = function () {
+  const aiEngine = new AIHeuristicEngine();
+  return aiEngine.integrarComRiskAssessment(this.assessAllHosts());
+};
+
+// ===== REMOVER AS FUNÇÕES SOLTAS (já estão dentro da classe) =====
+// (Remover estas funções que estão fora da classe)
+
+// ===== ENDPOINT PARA ANÁLISE DE HEURÍSTICAS DE IA =====
+app.get('/scan/:scanId/ai-heuristics', async (req, res) => {
+  try {
+    const scanId = req.params.scanId;
+
+    // Buscar resultados do scan
+    const resultsSnap = await db.collection('ScanResults')
+      .where('parent_scan_id', '==', scanId)
+      .get();
+
+    if (resultsSnap.empty) {
+      return res.status(404).json({ error: 'No scan results found' });
+    }
+
+    const ScanResults = resultsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Criar instância do RiskAssessmentExpert
+    const riskExpert = new RiskAssessmentExpert(ScanResults);
+
+    // Aplicar heurísticas de IA
+    const aiEngine = new AIHeuristicEngine();
+    const enhancedResults = aiEngine.integrarComRiskAssessment(
+      riskExpert.assessAllHosts()
+    );
+
+    // Gerar recomendações inteligentes usando a instância do aiEngine
+    const smartRecommendations = aiEngine.gerarRecomendacoesInteligentes(enhancedResults);
+
+    res.json({
+      scan_id: scanId,
+      ai_analysis: enhancedResults.ai_heuristic_analysis,
+      enhanced_hosts: enhancedResults.assessedHosts,
+      smart_recommendations: smartRecommendations,
+      executive_summary: aiEngine.gerarResumoExecutivo(enhancedResults)
+    });
+
+  } catch (err) {
+    console.error('Error in AI heuristics analysis:', err);
+    res.status(500).json({
+      error: 'Failed to perform AI heuristic analysis',
+      details: err.message
+    });
+  }
 });
+
+// ===== ENDPOINT PARA TESTE DAS HEURÍSTICAS =====
+app.post('/ai-heuristics/test', async (req, res) => {
+  try {
+    const { cves, ports } = req.body;
+
+    if (!cves || !Array.isArray(cves)) {
+      return res.status(400).json({ error: 'cves array is required' });
+    }
+
+    const aiEngine = new AIHeuristicEngine();
+    const testHost = {
+      host: 'test-host',
+      hostname: 'test.example.com',
+      ports: ports || [],
+      foundCVEs: cves || []
+    };
+
+    const analysis = aiEngine.analisarEPriorizarCVEs(testHost);
+
+    res.json({
+      success: true,
+      analysis: analysis,
+      heuristic_engine: {
+        weights: aiEngine.WEIGHTS,
+        version: '1.0'
+      }
+    });
+
+  } catch (err) {
+    console.error('Error testing AI heuristics:', err);
+    res.status(500).json({ error: 'Failed to test AI heuristics', details: err.message });
+  }
+});
+
+// ===== ENDPOINT PARA ESTATÍSTICAS DAS HEURÍSTICAS =====
+app.get('/ai-heuristics/stats', (req, res) => {
+  const aiEngine = new AIHeuristicEngine();
+
+  res.json({
+    heuristic_engine: {
+      name: 'AIHeuristicEngine',
+      version: '1.0',
+      weights: aiEngine.WEIGHTS,
+      capabilities: [
+        'CVE age probability calculation',
+        'Network exposure scoring',
+        'Service criticality assessment',
+        'Exploit availability weighting',
+        'Priority-based recommendations',
+        'Timeline estimation'
+      ],
+      thresholds: {
+        critical: 80,
+        high: 60,
+        medium: 40,
+        low: 20
+      }
+    }
+  });
+});
+
+// ===== FUNÇÃO AUXILIAR PARA CALCULAR RATING A PARTIR DE HEURÍSTICAS =====
+function calculateOverallRatingFromHeuristics(riskDistribution) {
+  const { CRITICAL = 0, HIGH = 0, MEDIUM = 0, LOW = 0, INFO = 0 } = riskDistribution;
+  const total = CRITICAL + HIGH + MEDIUM + LOW + INFO;
+
+  if (total === 0) return 'UNKNOWN';
+
+  const weightedScore = (CRITICAL * 5 + HIGH * 4 + MEDIUM * 3 + LOW * 2 + INFO * 1) / total;
+
+  if (weightedScore >= 4.5) return 'CRITICAL';
+  if (weightedScore >= 3.5) return 'HIGH';
+  if (weightedScore >= 2.5) return 'MEDIUM';
+  if (weightedScore >= 1.5) return 'LOW';
+  return 'INFO';
+}
 
 // Process-level handlers for crashes and promise rejections
 process.on('unhandledRejection', (reason, p) => {
