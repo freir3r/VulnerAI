@@ -2522,7 +2522,7 @@ const apiLimiter = rateLimit({
       // This is likely a polling request for scan status
       return true;
     }
-  
+
     if (req.method === 'OPTIONS') return true;
     return false;
   }
@@ -3950,43 +3950,68 @@ class AIHeuristicEngine {
 
   // Calcular heurística completa para um CVE específico
   calcularHeuristicaCVE(cve, hostData) {
+    console.log(`🧮 [AI] Calculando heurística para ${cve.cve_id}`);
+
     const cvssScore = cve.CVSS?.score || 0;
     const cveYear = cve.year || this.extractYearFromCVE(cve.cve_id);
     const exploitAvailable = cve.exploit_available || false;
 
-    // Fatores calculados
+    // === CORREÇÃO 1: Fatores NORMALIZADOS (0-1) ===
+
+    // 1. CVSS: 0-10 → normalizar para 0-1
+    const fatorCVSS = Math.min(cvssScore / 10, 1);
+
+    // 2. Idade: probabilidade 0-1
     const fatorIdade = this.calcularProbabilidade(cveYear);
-    const fatorExposicao = this.calcularExposicaoRede(hostData.ports) / 10; // Normalizar 0-1
+
+    // 3. Exposição rede: 0-10 → normalizar para 0-1
+    const exposicaoRede = this.calcularExposicaoRede(hostData.ports || []);
+    const fatorExposicao = Math.min(exposicaoRede / 10, 1);
+
+    // 4. Exploit: 1.0 se disponível, 0.2 se não
     const fatorExploit = exploitAvailable ? 1.0 : 0.2;
 
-    // Pontuação base CVSS (normalizada 0-10)
-    const scoreCVSS = (cvssScore / 10) * 10;
+    // 5. Criticidade serviço: 0-10 → normalizar
+    const criticidadeServico = this.calcularCriticidadeServico(hostData.ports || []);
+    const fatorCriticidade = Math.min(criticidadeServico / 10, 1);
 
-    // Cálculo da heurística ponderada
-    const heuristicScore =
-      (scoreCVSS * this.WEIGHTS.cvssScore) +
-      (fatorIdade * 10 * this.WEIGHTS.cveAge) +
-      (fatorExposicao * 10 * this.WEIGHTS.networkExposure) +
-      (fatorExploit * 10 * this.WEIGHTS.exploitAvailable);
+    // === CORREÇÃO 2: Cálculo CORRETO com pesos ===
+    const heuristicScore = (
+      (fatorCVSS * 100 * this.WEIGHTS.cvssScore) +
+      (fatorIdade * 100 * this.WEIGHTS.cveAge) +
+      (fatorExposicao * 100 * this.WEIGHTS.networkExposure) +
+      (fatorExploit * 100 * this.WEIGHTS.exploitAvailable) +
+      (fatorCriticidade * 100 * this.WEIGHTS.serviceCriticality)
+    );
+
+    const finalScore = Math.min(100, Math.round(heuristicScore * 100) / 100);
+
+    console.log(`📊 [AI] ${cve.cve_id}:`);
+    console.log(`   CVSS: ${cvssScore} → fator: ${fatorCVSS.toFixed(2)}`);
+    console.log(`   Ano: ${cveYear} → idade: ${fatorIdade.toFixed(2)}`);
+    console.log(`   Exposição: ${exposicaoRede.toFixed(2)}/10 → fator: ${fatorExposicao.toFixed(2)}`);
+    console.log(`   Exploit: ${exploitAvailable} → fator: ${fatorExploit}`);
+    console.log(`   Criticidade: ${criticidadeServico.toFixed(2)}/10 → fator: ${fatorCriticidade.toFixed(2)}`);
+    console.log(`   SCORE FINAL: ${finalScore}/100`);
 
     return {
-      score: Math.min(100, heuristicScore),
+      score: finalScore,
       factors: {
-        cvss: scoreCVSS,
-        cveAge: fatorIdade * 10,
-        networkExposure: fatorExposicao * 10,
-        exploitAvailable: fatorExploit * 10,
-        serviceCriticality: this.calcularCriticidadeServico(hostData.ports)
+        cvss: Math.round(fatorCVSS * 100),        // 0-100
+        cveAge: Math.round(fatorIdade * 100),     // 0-100  
+        networkExposure: Math.round(fatorExposicao * 100),  // 0-100
+        exploitAvailable: Math.round(fatorExploit * 100),   // 0-100
+        serviceCriticality: Math.round(fatorCriticidade * 100)  // 0-100
       },
       breakdown: {
-        cvssContribution: (scoreCVSS * this.WEIGHTS.cvssScore),
-        ageContribution: (fatorIdade * 10 * this.WEIGHTS.cveAge),
-        exposureContribution: (fatorExposicao * 10 * this.WEIGHTS.networkExposure),
-        exploitContribution: (fatorExploit * 10 * this.WEIGHTS.exploitAvailable)
+        cvssContribution: Math.round(fatorCVSS * 100 * this.WEIGHTS.cvssScore),
+        ageContribution: Math.round(fatorIdade * 100 * this.WEIGHTS.cveAge),
+        exposureContribution: Math.round(fatorExposicao * 100 * this.WEIGHTS.networkExposure),
+        exploitContribution: Math.round(fatorExploit * 100 * this.WEIGHTS.exploitAvailable),
+        serviceContribution: Math.round(fatorCriticidade * 100 * this.WEIGHTS.serviceCriticality)
       }
     };
   }
-
   // Extrair ano do CVE
   extractYearFromCVE(cveId) {
     const match = cveId.match(/CVE-(\d{4})-\d+/);
@@ -4061,50 +4086,95 @@ class AIHeuristicEngine {
     return recommendation;
   }
 
+  getPatchRecommendation(cve) {
+    if (!cve || !cve.cve_id) {
+      return 'Atualizar para a versão mais recente disponível do software afetado';
+    }
+
+    const service = (cve.service || '').toLowerCase();
+    const cvss = cve.CVSS?.score || 0;
+    const exploit = cve.exploit_available === true;
+
+    // Recomendações específicas por serviço
+    const serviceRecommendations = {
+      'nginx': 'Atualizar o Nginx para a versão estável mais recente (>= 1.18)',
+      'apache': 'Atualizar o Apache HTTP Server para a versão mais recente da branch 2.4.x',
+      'httpd': 'Atualizar o Apache HTTP Server para a versão mais recente da branch 2.4.x',
+      'openssh': 'Atualizar o OpenSSH para a versão mais recente e rodar ssh-audit',
+      'ssh': 'Atualizar o OpenSSH e rever configurações de autenticação',
+      'mysql': 'Atualizar o MySQL para a versão 8.x mais recente',
+      'postgresql': 'Atualizar o PostgreSQL para a versão 13+ corrigida',
+      'node': 'Atualizar o Node.js para uma versão LTS suportada',
+      'node.js': 'Atualizar o Node.js para uma versão LTS suportada',
+      'rdp': 'Aplicar patches de segurança do sistema operativo (RDP)',
+      'smb': 'Aplicar patches SMB e desativar SMBv1 se ativo',
+      'ftp': 'Atualizar o serviço FTP ou substituir por SFTP',
+      'telnet': 'DESATIVAR Telnet e substituir por SSH',
+      'vnc': 'Atualizar VNC e restringir acesso por firewall/VPN'
+    };
+
+    for (const [key, recommendation] of Object.entries(serviceRecommendations)) {
+      if (service.includes(key)) {
+        return recommendation;
+      }
+    }
+
+    // CVSS crítico sem serviço claro
+    if (cvss >= 9.0) {
+      return 'Aplicar patch oficial do fabricante imediatamente (CVE crítico)';
+    }
+
+    // Exploit conhecido
+    if (exploit) {
+      return 'Atualizar software afetado e aplicar mitigação temporária até patch definitivo';
+    }
+
+    // Fallback genérico
+    return 'Aplicar patch oficial do fornecedor ou atualizar para a versão corrigida mais recente';
+  }
+
   // Gerar itens de ação específicos
   gerarItensAcao(cve, hostData, heuristic) {
     const actions = [];
     const portasAfetadas = this.identificarPortasAfetadas(cve, hostData);
 
-    // Ação 1: Atualização/Patches
-    if (heuristic.factors.cveAge > 5) {
-      actions.push({
-        priority: 1,
-        action: 'Aplicar patch de segurança',
-        details: `CVE ${cve.cve_id} tem ${new Date().getFullYear() - cve.year} anos - patch provavelmente disponível`,
-        estimated_time: '2-4 horas'
-      });
-    }
+    // Ação 1 sempre (patch)
+    actions.push({
+      priority: 1,
+      action: 'Aplicar patch de segurança',
+      details: `CVE ${cve.cve_id} - ${this.getPatchRecommendation(cve)}`,
+      estimated_time: '2-4 horas'
+    });
 
-    // Ação 2: Workarounds/Compensação
-    if (heuristic.factors.exploitAvailable > 5) {
+    // Ação 2 SOMENTE se exploit disponível
+    if (cve.exploit_available) {
       actions.push({
         priority: 2,
         action: 'Implementar workaround temporário',
-        details: 'Exploit conhecido disponível - aplicar compensações até patch estar disponível',
+        details: 'Exploit conhecido disponível - aplicar compensações',
         estimated_time: '1-2 horas'
       });
     }
 
-    // Ação 3: Reduzir superfície de ataque
-    if (heuristic.factors.networkExposure > 6 && portasAfetadas.length > 0) {
+    // Ação 3 se alta exposição
+    if (heuristic.factors.networkExposure > 60 && portasAfetadas.length > 0) {
       actions.push({
         priority: 3,
-        action: 'Restringir acesso às portas afetadas',
-        details: `Portas ${portasAfetadas.join(', ')} expostas na rede`,
+        action: 'Restringir acesso às portas',
+        details: `Portas ${portasAfetadas.join(', ')} expostas`,
         estimated_time: '30 minutos'
       });
     }
 
-    // Ação 4: Monitoramento
+    // Ação 4 sempre (monitoramento)
     actions.push({
       priority: 4,
       action: 'Aumentar monitoramento',
-      details: `Monitorar tráfego nas portas afetadas e logs de sistema`,
+      details: 'Monitorar tráfego e logs',
       estimated_time: 'Contínuo'
     });
 
-    return actions.sort((a, b) => a.priority - b.priority);
+    return actions;
   }
 
   // Identificar portas afetadas por um CVE
@@ -4125,73 +4195,192 @@ class AIHeuristicEngine {
   gerarJustificativa(heuristic, cve, hostData) {
     const justifications = [];
 
-    // Justificar baseado no CVSS
-    if (heuristic.factors.cvss >= 9) {
-      justifications.push('CVSS CRÍTICO (>= 9.0)');
-    } else if (heuristic.factors.cvss >= 7) {
-      justifications.push('CVSS ALTO (>= 7.0)');
-    }
+    // CVSS mais preciso
+    if (cve.CVSS?.score >= 9.0) justifications.push('CVSS CRÍTICO (>= 9.0)');
+    else if (cve.CVSS?.score >= 7.0) justifications.push('CVSS ALTO (>= 7.0)');
+    else if (cve.CVSS?.score >= 4.0) justifications.push('CVSS MÉDIO (>= 4.0)');
+    else justifications.push('CVSS BAIXO (< 4.0)');
 
-    // Justificar baseado na idade
+    // Idade mais precisa
     const age = new Date().getFullYear() - cve.year;
-    if (age <= 1) {
-      justifications.push('CVE RECENTE (≤ 1 ano)');
-    }
-
-    // Justificar baseado em exploit
-    if (cve.exploit_available) {
-      justifications.push('EXPLOIT PÚBLICO DISPONÍVEL');
-    }
-
-    // Justificar baseado na exposição
-    if (heuristic.factors.networkExposure >= 7) {
-      justifications.push('ALTA EXPOSIÇÃO NA REDE');
-    }
+    if (age === 0) justifications.push('CVE DESTE ANO');
+    else if (age === 1) justifications.push('CVE DO ANO PASSADO');
+    else if (age <= 3) justifications.push(`CVE DE ${age} ANOS`);
+    else justifications.push(`CVE ANTIGO (${age} anos)`);
 
     return justifications.join(' | ');
   }
-
   // Analisar todos os CVEs de um host e priorizá-los
-  analisarEPriorizarCVEs(hostData) {
-    const cves = hostData.foundCVEs || [];
+  // DENTRO DA CLASSE AIHeuristicEngine (procure este método e substitua)
 
-    if (cves.length === 0) {
+  analisarEPriorizarCVEs(hostData) {
+    console.log(`🔍 [AI Heuristics] Analisando host: ${hostData.host || 'unknown'}`);
+
+    // DEBUG: Log completo da estrutura
+    console.log(`📊 [AI Debug] Estrutura do hostData:`);
+    console.log(`   - Tem foundCVEs?`, 'foundCVEs' in hostData);
+    console.log(`   - foundCVEs length:`, hostData.foundCVEs?.length || 0);
+    console.log(`   - Tem ports?`, 'ports' in hostData);
+    console.log(`   - ports length:`, hostData.ports?.length || 0);
+
+    // EXTRAIR CVEs de todas as fontes possíveis
+    let allCVEs = [];
+
+    // FONTE 1: foundCVEs direto
+    if (hostData.foundCVEs && Array.isArray(hostData.foundCVEs) && hostData.foundCVEs.length > 0) {
+      console.log(`✅ [AI Debug] Encontrei ${hostData.foundCVEs.length} CVEs em foundCVEs`);
+      allCVEs = [...hostData.foundCVEs];
+    }
+
+    // FONTE 2: Extrair de ports[].cves
+    if (hostData.ports && Array.isArray(hostData.ports)) {
+      console.log(`🔍 [AI Debug] Verificando ${hostData.ports.length} portas...`);
+
+      let cvesFromPorts = 0;
+      hostData.ports.forEach((port, idx) => {
+        if (port.cves && Array.isArray(port.cves) && port.cves.length > 0) {
+          console.log(`   Porta ${port.port} tem ${port.cves.length} CVEs`);
+          cvesFromPorts += port.cves.length;
+
+          port.cves.forEach(cve => {
+            // Criar objeto CVE completo
+            const cveObj = {
+              cve_id: cve.cve_id || 'UNKNOWN-CVE',
+              CVSS: cve.CVSS || { score: 0, vector: 'N/A' },
+              exploit_available: cve.exploit_available || false,
+              publishedDate: cve.publishedDate || null,
+              year: cve.year || this.extractYearFromCVE(cve.cve_id),
+              port: port.port,
+              service: port.service?.name || 'unknown'
+            };
+
+            allCVEs.push(cveObj);
+          });
+        }
+      });
+
+      if (cvesFromPorts > 0) {
+        console.log(`✅ [AI Debug] Extraí ${cvesFromPorts} CVEs das portas`);
+      }
+    }
+
+    // FONTE 3: Verificar se tem CVEs no risk_assessment findings
+    if ((!allCVEs || allCVEs.length === 0) &&
+      hostData.risk_assessment &&
+      hostData.risk_assessment.findings) {
+
+      console.log(`🔍 [AI Debug] Procurando CVEs em risk_assessment.findings`);
+
+      const cveFindings = hostData.risk_assessment.findings.filter(f =>
+        f.type === 'CVE_RISK' && f.cve_id
+      );
+
+      if (cveFindings.length > 0) {
+        console.log(`✅ [AI Debug] Encontrei ${cveFindings.length} CVEs em findings`);
+
+        cveFindings.forEach(finding => {
+          const cveObj = {
+            cve_id: finding.cve_id,
+            CVSS: { score: finding.cvss_score || 0, vector: 'N/A' },
+            exploit_available: false, // Não sabemos pelos findings
+            publishedDate: null,
+            year: this.extractYearFromCVE(finding.cve_id),
+            port: finding.port || 'unknown',
+            service: finding.service || 'unknown'
+          };
+
+          allCVEs.push(cveObj);
+        });
+      }
+    }
+
+    // Remover duplicados (pelo cve_id)
+    const uniqueCVEs = [];
+    const seenCVEIds = new Set();
+
+    allCVEs.forEach(cve => {
+      if (cve.cve_id && cve.cve_id !== 'UNKNOWN-CVE') {
+        if (!seenCVEIds.has(cve.cve_id)) {
+          seenCVEIds.add(cve.cve_id);
+          uniqueCVEs.push(cve);
+        }
+      }
+    });
+
+    console.log(`📊 [AI Heuristics] Total de CVEs únicos encontrados: ${uniqueCVEs.length}`);
+
+    if (uniqueCVEs.length === 0) {
+      console.log(`⚠️ [AI Heuristics] Nenhum CVE encontrado para análise`);
       return {
-        host: hostData.host,
-        hostname: hostData.hostname,
+        host: hostData.host || 'unknown',
+        hostname: hostData.hostname || '',
         total_cves: 0,
+        overall_heuristic_score: 0,
         prioritized_cves: [],
-        overall_heuristic_score: 0
+        summary_by_urgency: {
+          CRITICAL: 0,
+          HIGH: 0,
+          MEDIUM: 0,
+          LOW: 0
+        }
       };
     }
 
-    // Analisar cada CVE
-    const analyzedCVEs = cves.map(cve => {
-      const analysis = this.calcularHeuristicaCVE(cve, hostData);
-      const recommendation = this.gerarRecomendacaoPriorizada(cve, hostData);
+    // Log dos CVEs encontrados
+    console.log(`📋 [AI Debug] CVEs encontrados:`);
+    uniqueCVEs.forEach((cve, idx) => {
+      console.log(`   ${idx + 1}. ${cve.cve_id} - CVSS: ${cve.CVSS?.score || 0} - Ano: ${cve.year}`);
+    });
 
-      return {
-        ...cve,
-        heuristic_analysis: analysis,
-        recommendation: recommendation
-      };
+    // ANALISAR cada CVE com heurísticas
+    console.log(`🧠 [AI Heuristics] Aplicando heurísticas em ${uniqueCVEs.length} CVEs...`);
+
+    const analyzedCVEs = uniqueCVEs.map(cve => {
+      try {
+        const analysis = this.calcularHeuristicaCVE(cve, hostData);
+        const recommendation = this.gerarRecomendacaoPriorizada(cve, hostData);
+
+        return {
+          ...cve,
+          heuristic_analysis: analysis,
+          recommendation: recommendation
+        };
+      } catch (error) {
+        console.error(`❌ [AI Error] Erro ao analisar CVE ${cve.cve_id}:`, error.message);
+        return {
+          ...cve,
+          heuristic_analysis: { score: 0, factors: {}, breakdown: {} },
+          recommendation: {
+            urgency: 'UNKNOWN',
+            timeframe: 'N/A',
+            action_items: [],
+            justification: 'Erro na análise'
+          }
+        };
+      }
     });
 
     // Ordenar por score heurístico (maior primeiro)
     analyzedCVEs.sort((a, b) =>
-      b.heuristic_analysis.score - a.heuristic_analysis.score
+      (b.heuristic_analysis?.score || 0) - (a.heuristic_analysis?.score || 0)
     );
 
     // Calcular score geral do host
-    const overallScore = analyzedCVEs.length > 0
-      ? analyzedCVEs.reduce((sum, cve) => sum + cve.heuristic_analysis.score, 0) / analyzedCVEs.length
+    const validScores = analyzedCVEs
+      .map(cve => cve.heuristic_analysis?.score || 0)
+      .filter(score => score > 0);
+
+    const overallScore = validScores.length > 0
+      ? validScores.reduce((sum, score) => sum + score, 0) / validScores.length
       : 0;
 
+    console.log(`🎯 [AI Heuristics] Análise completada - Score geral: ${overallScore.toFixed(2)}`);
+
     return {
-      host: hostData.host,
-      hostname: hostData.hostname,
-      total_cves: cves.length,
-      overall_heuristic_score: Math.round(overallScore),
+      host: hostData.host || 'unknown',
+      hostname: hostData.hostname || '',
+      total_cves: uniqueCVEs.length,
+      overall_heuristic_score: Math.round(overallScore * 100) / 100,
       prioritized_cves: analyzedCVEs.slice(0, 10), // Top 10 mais críticos
       summary_by_urgency: this.gerarSumarioUrgencia(analyzedCVEs)
     };
@@ -4457,7 +4646,7 @@ app.get('/scan/:scanId/ai-heuristics', async (req, res) => {
   try {
     const scanId = req.params.scanId;
 
-    // Buscar resultados do scan
+    // 1. Buscar dados EXATAMENTE como no endpoint /cves
     const resultsSnap = await db.collection('ScanResults')
       .where('parent_scan_id', '==', scanId)
       .get();
@@ -4466,37 +4655,123 @@ app.get('/scan/:scanId/ai-heuristics', async (req, res) => {
       return res.status(404).json({ error: 'No scan results found' });
     }
 
-    const ScanResults = resultsSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // 2. Extrair todos os CVEs
+    const allCVEs = [];
+    const hostsData = resultsSnap.docs.map(doc => {
+      const data = doc.data();
+      const hostCVEs = data.foundCVEs || [];
 
-    // Criar instância do RiskAssessmentExpert
-    const riskExpert = new RiskAssessmentExpert(ScanResults);
+      // Adicionar informações do host a cada CVE
+      hostCVEs.forEach(cve => {
+        allCVEs.push({
+          ...cve,
+          host: data.host,
+          hostname: data.hostname,
+          device_type: data.device_type,
+          port: cve.port || 'unknown',
+          service: cve.service || 'unknown',
+          // Garantir que tem year
+          year: cve.year || parseInt(cve.cve_id?.match(/CVE-(\d{4})/)?.[1]) || new Date().getFullYear()
+        });
+      });
 
-    // Aplicar heurísticas de IA
+      return {
+        host: data.host,
+        hostname: data.hostname,
+        ports: data.ports || [],
+        foundCVEs: hostCVEs,
+        open_ports_count: data.open_ports_count || 0,
+        device_type: data.device_type
+      };
+    });
+
+    // 3. Se não tem CVEs, retornar vazio
+    if (allCVEs.length === 0) {
+      return res.json({
+        scan_id: scanId,
+        message: "No CVEs found for AI analysis",
+        total_cves: 0
+      });
+    }
+
+    // 4. Aplicar IA em CADA CVE individualmente
     const aiEngine = new AIHeuristicEngine();
-    const enhancedResults = aiEngine.integrarComRiskAssessment(
-      riskExpert.assessAllHosts()
+    const analyzedCVEs = [];
+
+    allCVEs.forEach(cve => {
+      // Encontrar dados do host correspondente
+      const hostData = hostsData.find(h => h.host === cve.host) || {};
+
+      // Analisar CVE com IA
+      const analysis = aiEngine.calcularHeuristicaCVE(cve, hostData);
+      const recommendation = aiEngine.gerarRecomendacaoPriorizada(cve, hostData);
+
+      analyzedCVEs.push({
+        ...cve,
+        heuristic_analysis: analysis,
+        recommendation: recommendation
+      });
+    });
+
+    // 5. Ordenar por score
+    analyzedCVEs.sort((a, b) =>
+      (b.heuristic_analysis?.score || 0) - (a.heuristic_analysis?.score || 0)
     );
 
-    // Gerar recomendações inteligentes usando a instância do aiEngine
-    const smartRecommendations = aiEngine.gerarRecomendacoesInteligentes(enhancedResults);
+    // 6. Agrupar por host
+    const enhancedHosts = hostsData.map(host => {
+      const hostCVEs = analyzedCVEs.filter(cve => cve.host === host.host);
+      const scores = hostCVEs.map(cve => cve.heuristic_analysis?.score || 0);
+      const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b) / scores.length : 0;
 
+      return {
+        ...host,
+        ai_heuristic_analysis: {
+          host: host.host,
+          hostname: host.hostname,
+          total_cves: hostCVEs.length,
+          overall_heuristic_score: Math.round(avgScore * 100) / 100,
+          prioritized_cves: hostCVEs.slice(0, 5),
+          summary_by_urgency: aiEngine.gerarSumarioUrgencia(hostCVEs)
+        }
+      };
+    });
+
+    // 7. Gerar recomendações
+    const smartRecommendations = analyzedCVEs
+      .filter(cve => cve.recommendation?.urgency === 'HIGH' || cve.recommendation?.urgency === 'CRITICAL')
+      .map(cve => ({
+        type: 'AI_RECOMMENDATION',
+        host: cve.host,
+        cve_id: cve.cve_id,
+        heuristic_score: cve.heuristic_analysis?.score || 0,
+        action: cve.recommendation?.action_items?.[0]?.action || 'Apply security patch',
+        timeframe: cve.recommendation?.timeframe || '7 dias',
+        justification: cve.recommendation?.justification || 'AI heuristic analysis'
+      }));
+
+    // 8. Retornar
     res.json({
       scan_id: scanId,
-      ai_analysis: enhancedResults.ai_heuristic_analysis,
-      enhanced_hosts: enhancedResults.assessedHosts,
+      total_cves_analyzed: analyzedCVEs.length,
+      top_cves: analyzedCVEs.slice(0, 10),
+      enhanced_hosts: enhancedHosts,
       smart_recommendations: smartRecommendations,
-      executive_summary: aiEngine.gerarResumoExecutivo(enhancedResults)
+      executive_summary: {
+        overall_risk_score: Math.round(analyzedCVEs.reduce((sum, cve) => sum + (cve.heuristic_analysis?.score || 0), 0) / analyzedCVEs.length),
+        risk_level: aiEngine.determinarNivelRiscoGeral(analyzedCVEs.reduce((sum, cve) => sum + (cve.heuristic_analysis?.score || 0), 0) / analyzedCVEs.length),
+        critical_findings: analyzedCVEs.filter(cve => cve.heuristic_analysis?.score >= 80).length,
+        top_concerns: analyzedCVEs.slice(0, 3).map(cve => ({
+          cve: cve.cve_id,
+          risk_score: cve.heuristic_analysis?.score,
+          affected_host: cve.host
+        }))
+      }
     });
 
   } catch (err) {
-    console.error('Error in AI heuristics analysis:', err);
-    res.status(500).json({
-      error: 'Failed to perform AI heuristic analysis',
-      details: err.message
-    });
+    console.error('Error in AI heuristics:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
