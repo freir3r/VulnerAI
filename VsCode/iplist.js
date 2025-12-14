@@ -546,6 +546,26 @@ const auth = getAuth(app);
 
   function attachIf(el, event, cb) { try { if (!el) return false; el.addEventListener(event, cb); return true; } catch (e) { console.error('attachIf', e); return false; } }
 
+  /* ====== AUTO-OPEN MODALS FROM URL ====== */
+function checkUrlForActions() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+
+    if (action === 'add') {
+        console.log('[Auto-Action] Opening Add Target modal');
+        // Simular clique no botão "Add Target" da página para abrir o modal
+        const btnAdd = document.getElementById("iplist-open-add");
+        if (btnAdd) setTimeout(() => btnAdd.click(), 300);
+    }
+
+    if (action === 'import') {
+        console.log('[Auto-Action] Opening Import modal');
+        // Simular clique no botão "Import CSV"
+        const btnImport = document.getElementById("iplist-import-csv");
+        if (btnImport) setTimeout(() => btnImport.click(), 300);
+    }
+}
+
   function init() {
     try {
       console.log('iplist:init start (Firebase mode + Stats)');
@@ -555,7 +575,7 @@ const auth = getAuth(app);
 
       // 2. Iniciar carregamento
       loadTargets();
-
+      checkUrlForActions();
       ensureTagModal();
 
       // UI Listeners
