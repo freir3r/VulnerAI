@@ -1564,12 +1564,7 @@ function renderRiskAnalysisDetails(ra) {
         <div class="muted">Total Findings: <strong>${rs.totalFindings ?? rs.totalFindings ?? 0}</strong></div>
         <div class="muted">Recommendations: <strong>${recCount}</strong></div>
       </div>
-      ${Array.isArray(ra.recommendations) && ra.recommendations.length > 0 ? `
-        <div style="margin-top:12px;">
-          <h3>Top Recommendations</h3>
-          <ul style="margin-left:18px;">${ra.recommendations.slice(0, 6).map(r => `<li>${r.host ? r.host + ': ' : ''}${r.issue || r.action || r.description || JSON.stringify(r)}</li>`).join('')}</ul>
-        </div>
-      ` : ''}
+      
     </div>
   `;
 }
@@ -2191,10 +2186,6 @@ async function init() {
     });
   }
   /* ====== AI ASSESSMENT DISPLAY ====== */
-
-
-  /* ====== AI ASSESSMENT DISPLAY ====== */
-  /* ====== AI ASSESSMENT DISPLAY ====== */
   function displayAIAssessment(aiData) {
     console.log('🎯 Displaying AI Assessment:', aiData);
 
@@ -2677,213 +2668,8 @@ async function init() {
         </div>
       ` : ''}
       
-      <!-- Smart Recommendations -->
-      ${smartRecommendations.length > 0 ? `
-        <div class="recommendations-section" style="margin-bottom: 25px;">
-          <h3 style="
-            color: var(--ink);
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #198754;
-          ">
-            🎯 AI-Powered Recommendations (${smartRecommendations.length})
-          </h3>
-          
-          <div class="recommendations-list" style="display: flex; flex-direction: column; gap: 12px;">
-            ${smartRecommendations.map((rec, index) => {
-          const priority = rec.urgency || rec.priority || 'MEDIUM';
+           
 
-          return `
-                <div class="recommendation-card" style="
-                  padding: 15px;
-                  border-radius: 8px;
-                  border-left: 4px solid ${getRiskColor(priority)};
-                  background: #f8f9fa;
-                  transition: transform 0.2s ease;
-                ">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                    <strong style="color: var(--ink); font-size: 1.1em;">
-                      ${rec.type === 'AI_RECOMMENDATION' ? 'AI Security Recommendation' : rec.type || `Recommendation #${index + 1}`}
-                    </strong>
-                    ${getSeverityBadge(priority)}
-                  </div>
-                  
-                  <div style="color: var(--muted); margin-bottom: 10px; font-size: 0.95em; line-height: 1.5;">
-                    ${rec.justification || rec.description || 'No description available'}
-                  </div>
-                  
-                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-                    ${rec.host ? `
-                      <span style="
-                        background: var(--bg);
-                        padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
-                        color: var(--ink);
-                      ">
-                        🖥️ ${rec.host}
-                      </span>
-                    ` : ''}
-                    
-                    ${rec.cve_id ? `
-                      <span style="
-                        background: var(--bg);
-                        padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
-                        color: var(--ink);
-                      ">
-                        🎯 ${rec.cve_id}
-                      </span>
-                    ` : ''}
-                    
-                    ${rec.heuristic_score ? `
-                      <span style="
-                        background: var(--bg);
-                        padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
-                        color: var(--ink);
-                      ">
-                        🧠 AI Score: ${rec.heuristic_score}
-                      </span>
-                    ` : ''}
-                    
-                    ${rec.timeframe ? `
-                      <span style="
-                        background: var(--bg);
-                        padding: 4px 10px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
-                        color: var(--ink);
-                      ">
-                        ⏰ ${rec.timeframe}
-                      </span>
-                    ` : ''}
-                  </div>
-                  
-                  <div style="
-                    background: white;
-                    padding: 12px;
-                    border-radius: 6px;
-                    border: 1px solid var(--border);
-                    margin-top: 10px;
-                  ">
-                    <strong style="color: #0d6efd; display: block; margin-bottom: 5px;">📝 Recommended Action:</strong>
-                    <p style="margin: 0; font-size: 0.9em; color: var(--ink); line-height: 1.4;">
-                      ${rec.action || 'Apply security patches and configurations'}
-                    </p>
-                  </div>
-                </div>
-              `;
-        }).join('')}
-          </div>
-        </div>
-      ` : ''}
-      
-      <!-- Enhanced Hosts -->
-      ${enhancedHosts.length > 0 ? `
-        <div class="hosts-section" style="margin-bottom: 25px;">
-          <h3 style="
-            color: var(--ink);
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #0dcaf0;
-          ">
-            🖥️ Host Security Analysis (${enhancedHosts.length})
-          </h3>
-          
-          <div class="hosts-list" style="display: flex; flex-direction: column; gap: 12px;">
-            ${enhancedHosts.map((host, index) => {
-          const hostAnalysis = host.ai_heuristic_analysis || {};
-          const hostRisk = hostAnalysis.overall_risk ||
-            (hostAnalysis.overall_heuristic_score >= 80 ? 'HIGH' :
-              hostAnalysis.overall_heuristic_score >= 50 ? 'MEDIUM' : 'LOW');
-
-          return `
-                <div class="host-card" style="
-                  padding: 20px;
-                  border-radius: 8px;
-                  border: 1px solid var(--border);
-                  background: white;
-                  transition: transform 0.2s ease;
-                ">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
-                    <div>
-                      <strong style="color: var(--ink); font-size: 1.2em;">
-                        ${host.host || `Host ${index + 1}`}
-                      </strong>
-                      ${host.hostname ? `
-                        <div style="color: var(--muted); margin-top: 5px; font-size: 0.95em;">
-                          ${host.hostname}
-                        </div>
-                      ` : ''}
-                    </div>
-                    <div style="text-align: right;">
-                      ${getSeverityBadge(hostRisk)}
-                      <div style="font-weight: bold; color: ${getRiskColor(hostRisk)}; margin-top: 5px;">
-                        Risk Score: ${hostAnalysis.overall_heuristic_score || 0}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
-                    <div style="text-align: center;">
-                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
-                        ${hostAnalysis.total_cves || 0}
-                      </div>
-                      <div style="font-size: 0.85em; color: var(--muted);">CVEs Found</div>
-                    </div>
-                    
-                    <div style="text-align: center;">
-                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
-                        ${host.open_ports_count || 0}
-                      </div>
-                      <div style="font-size: 0.85em; color: var(--muted);">Open Ports</div>
-                    </div>
-                    
-                    <div style="text-align: center;">
-                      <div style="font-size: 1.5em; font-weight: bold; color: var(--ink);">
-                        ${host.device_type || 'Unknown'}
-                      </div>
-                      <div style="font-size: 0.85em; color: var(--muted);">Device Type</div>
-                    </div>
-                  </div>
-                  
-                  ${hostAnalysis.summary_by_urgency ? `
-                    <div style="margin-top: 15px; padding: 15px; background: var(--bg); border-radius: 6px;">
-                      <strong style="color: var(--ink); display: block; margin-bottom: 10px;">📊 AI Security Summary:</strong>
-                      <div style="font-size: 0.9em; color: var(--muted); line-height: 1.5;">
-                         ${getHostSummaryText(hostAnalysis)}
-                      </div>
-                    </div>
-                  ` : ''}
-                  
-                  ${hostAnalysis.prioritized_cves && hostAnalysis.prioritized_cves.length > 0 ? `
-                    <div style="margin-top: 15px;">
-                      <strong style="color: var(--ink); display: block; margin-bottom: 10px;">🔍 Top CVEs on this host:</strong>
-                      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        ${hostAnalysis.prioritized_cves.slice(0, 5).map(cve => `
-                          <span style="
-                            background: ${getRiskColor(getCVESeverity(cve))};
-                            color: white;
-                            padding: 4px 10px;
-                            border-radius: 15px;
-                            font-size: 0.8em;
-                            font-weight: bold;
-                          ">
-                            ${cve.cve_id || 'CVE'}
-                          </span>
-                        `).join('')}
-                      </div>
-                    </div>
-                  ` : ''}
-                </div>
-              `;
-        }).join('')}
-          </div>
-        </div>
-      ` : ''}
       
       <!-- Statistics -->
       <div style="
