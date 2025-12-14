@@ -34,14 +34,17 @@
         <div class="sum-row"><span class="label">Price</span><span id="sum-price" class="value">€9.99 / mo</span></div>
         <div class="sum-row small" id="sum-billed">Billed monthly</div>
         <hr />
-        <div class="sum-row"><span class="label">VAT (23%)</span><span id="sum-vat" class="value">€2.30</span></div>
-        <div class="sum-row total"><span class="label">Total today</span><span id="sum-total" class="value">€12.29</span></div>
+       <div class="sum-row total">
+  <span class="label">Total today</span>
+  <span id="sum-total" class="value">€9.99</span>
+</div>
+
       </aside>
 
       <!-- MAIN PANEL -->
       <section class="panel">
         <h1 class="title">Checkout</h1>
-        <p class="muted">Choose your preferred payment method.</p>
+        <p class="muted">Review your details before proceeding to payment.</p>
 
         <!-- Monthly / Yearly -->
         <div class="billing-switch">
@@ -76,93 +79,6 @@
             </div>
           </div>
 
-          <!-- Payment -->
-          <section class="pay">
-            <h2 class="section-title">Payment</h2>
-
-            <!-- Methods -->
-            <div class="pay-methods">
-              <h3 class="pm-title">Payment methods</h3>
-
-              <label class="pm-item active">
-                <input type="radio" name="pm" value="card" checked />
-                <span class="pm-face">
-                  <img src="../Resources/CheckOut/Visa-Mastercard-1-1024x378.png" alt="Visa & Mastercard" />
-                  <span>Credit / Debit Card</span>
-                </span>
-              </label>
-
-              <label class="pm-item">
-                <input type="radio" name="pm" value="apple" />
-                <span class="pm-face">
-                  <img src="../Resources/CheckOut/Apple-Pay-logo.png" alt="Apple Pay" />
-                  <span>Apple Pay</span>
-                </span>
-              </label>
-
-              <label class="pm-item">
-                <input type="radio" name="pm" value="google" />
-                <span class="pm-face">
-                  <img src="../Resources/CheckOut/googlepay.png" alt="Google Pay" />
-                  <span>Google Pay</span>
-                </span>
-              </label>
-
-              <label class="pm-item">
-                <input type="radio" name="pm" value="paypal" />
-                <span class="pm-face">
-                  <img src="../Resources/CheckOut/PayPal.svg.png" alt="PayPal" />
-                  <span>PayPal</span>
-                </span>
-              </label>
-            </div>
-
-            <!-- Panels per method -->
-            <div class="pm-panels">
-              <!-- CARD -->
-              <div class="panel" data-method="card">
-                <div class="grid2">
-                  <label class="fld">
-                    <span class="lbl">Cardholder name</span>
-                    <input id="cc-name" class="inp" placeholder="Full name on card" autocomplete="cc-name" />
-                  </label>
-                  <label class="fld">
-                    <span class="lbl">Card number</span>
-                    <input id="cc-number" class="inp mono" placeholder="4242 4242 4242 4242" inputmode="numeric" autocomplete="cc-number" />
-                  </label>
-                  <label class="fld">
-                    <span class="lbl">Expiry</span>
-                    <input id="cc-exp" class="inp mono" placeholder="MM/YY" inputmode="numeric" autocomplete="cc-exp" />
-                  </label>
-                  <label class="fld">
-                    <span class="lbl">CVC</span>
-                    <input id="cc-cvc" class="inp mono" placeholder="CVC" inputmode="numeric" autocomplete="cc-csc" />
-                  </label>
-                </div>
-              </div>
-
-              <!-- APPLE PAY -->
-              <div class="panel hidden" data-method="apple">
-                <p class="muted">Use your Apple Wallet to complete the purchase.</p>
-                <button class="btn applepay" type="button">Pay with Apple Pay</button>
-                <p class="micro muted">Available on supported devices and browsers.</p>
-              </div>
-
-              <!-- GOOGLE PAY -->
-              <div class="panel hidden" data-method="google">
-                <p class="muted">Use your Google Wallet to complete the purchase.</p>
-                <button class="btn gpay" type="button">Pay with Google Pay</button>
-                <p class="micro muted">Available on supported devices and browsers.</p>
-              </div>
-
-              <!-- PAYPAL -->
-              <div class="panel hidden" data-method="paypal">
-                <p class="muted">You’ll be redirected to PayPal to authorize the payment, then back here.</p>
-                <button class="btn paypal" type="button">Continue with PayPal</button>
-              </div>
-            </div>
-          </section>
-
           <!-- Terms -->
           <label class="chk">
             <input id="agree" type="checkbox">
@@ -195,6 +111,207 @@
 
   <div id="toast" class="toast">Payment submitted (demo)</div>
 
-  <script src="checkout.js"></script>
+  <script src="Checkout.js"></script>
+
+  <script>
+  (function () {
+    try {
+      const quick = localStorage.getItem('vulnerai.theme');
+      const prefs = JSON.parse(localStorage.getItem('vulnerai.prefs')||'{}');
+      const isDark = quick ? (quick === 'dark') : !!prefs.themeDarkHeader;
+      document.body.classList.toggle('dark', isDark);
+      window.addEventListener('storage', e=>{
+        if(e.key==='vulnerai.theme' || e.key==='vulnerai.prefs'){
+          const q = localStorage.getItem('vulnerai.theme');
+          const p = JSON.parse(localStorage.getItem('vulnerai.prefs')||'{}');
+          document.body.classList.toggle('dark', q ? (q==='dark') : !!p.themeDarkHeader);
+        }
+      });
+    } catch(_) {}
+  })();
+  </script>
+
+<link rel="stylesheet" href="checkout.css" />
+</head>
+<body>
+
+  <script>
+  (function(){
+    const modal = document.getElementById('legal-modal');
+    const title = document.getElementById('legal-title');
+    const body  = document.getElementById('legal-body');
+
+    // Textos dos documentos
+    const docs = {
+      terms: `
+        <h4>Terms of Service</h4>
+        <p>Welcome to <strong>VulnerAI</strong>. By accessing or using our platform, you agree to be bound by the following Terms of Service. Please read them carefully before proceeding with any payment or subscription.</p>
+
+        <h5>1. Use of Service</h5>
+        <p>VulnerAI provides cybersecurity scanning and reporting tools for authorized network assessments. You agree to use these tools only on systems and domains that you own or have explicit permission to test. Any misuse or unauthorized access is strictly prohibited and may lead to suspension or legal action.</p>
+
+        <h5>2. Accounts and Subscriptions</h5>
+        <p>To access premium features, you may need to create an account and provide valid billing information. Subscriptions renew automatically based on your chosen plan (monthly or yearly), unless cancelled before the renewal date.</p>
+
+        <h5>3. Payments and Refunds</h5>
+        <p>All payments are processed securely through our payment partners. Charges are non-refundable once the scanning or reporting service has been delivered. If you experience any billing errors, please contact support within 7 days.</p>
+
+        <h5>4. Data Privacy and Security</h5>
+        <p>We handle user data in accordance with our <a href="#" data-doc="privacy">Privacy Policy</a>. Sensitive payment data (such as card details) is never stored on our servers.</p>
+
+        <h5>5. Limitations of Liability</h5>
+        <p>While we strive to provide accurate and up-to-date results, VulnerAI is not responsible for any damages, downtime, or data loss resulting from scans or user misuse. Our service is provided "as is" without warranties of any kind.</p>
+
+        <h5>6. Termination</h5>
+        <p>We may suspend or terminate access if suspicious or malicious activity is detected, or if these Terms are violated. You may cancel your subscription at any time through your account settings.</p>
+
+        <h5>7. Contact</h5>
+        <p>If you have questions about these Terms, please contact our support team at <a href="mailto:support@vulnerai.com">support@vulnerai.com</a>.</p>
+
+        <p style="margin-top:14px; font-size:.9rem; color:#999;">Last updated: October 2025</p>
+      `,
+
+      privacy: `
+        <h4>Privacy Policy</h4>
+        <p>We respect your privacy and are committed to protecting your personal data. This policy explains how we collect, use, and safeguard your information when using <strong>VulnerAI</strong>.</p>
+
+        <h5>1. Information We Collect</h5>
+        <p>We collect only essential data for account creation, billing, and scan reporting. Payment details are processed securely via certified third-party providers and never stored by us.</p>
+
+        <h5>2. Data Usage</h5>
+        <p>Your information is used solely to deliver the requested services and improve product experience. We do not sell or share data with external parties without your consent.</p>
+
+        <h5>3. Cookies</h5>
+        <p>Cookies are used to maintain session state and personalize the dashboard experience. You may disable cookies in your browser settings, but some features may stop working properly.</p>
+
+        <h5>4. Data Protection</h5>
+        <p>All data transmissions are encrypted using TLS. Access to stored information is restricted and monitored under internal security policies.</p>
+
+        <h5>5. User Rights</h5>
+        <p>You have the right to request, correct, or delete your data at any time by contacting our support team.</p>
+
+        <h5>6. Contact</h5>
+        <p>For privacy inquiries, email <a href="mailto:privacy@vulnerai.com">privacy@vulnerai.com</a>.</p>
+
+        <p style="margin-top:14px; font-size:.9rem; color:#999;">Last updated: October 2025</p>
+      `
+    };
+
+    function openModal(docKey){
+      const html = docs[docKey];
+      if(!html) return;
+      title.textContent = docKey === 'terms' ? 'Terms of Service' : 'Privacy Policy';
+      body.innerHTML = html;
+      modal.setAttribute('aria-hidden','false');
+      document.body.style.overflow='hidden';
+      modal.querySelector('.modal-dialog').focus();
+    }
+
+    function closeModal(){
+      modal.setAttribute('aria-hidden','true');
+      document.body.style.overflow='';
+    }
+
+    document.addEventListener('click', e=>{
+      const link = e.target.closest('[data-doc]');
+      if(link){
+        e.preventDefault();
+        openModal(link.dataset.doc);
+      }
+      if(e.target.matches('[data-close], .modal-backdrop')){
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', e=>{
+      if(e.key==='Escape' && modal.getAttribute('aria-hidden')==='false'){
+        closeModal();
+      }
+    });
+  })();
+  </script>
+
+  <script>
+  (function(){
+    // Elementos
+    const btnMonthly = document.getElementById('btn-monthly');
+    const btnYearly  = document.getElementById('btn-yearly');
+    const sumPlan     = document.getElementById('sum-plan');
+    const sumPrice    = document.getElementById('sum-price');
+    const sumBilled   = document.getElementById('sum-billed');
+    const form        = document.getElementById('bill-form');
+    const inputEmail  = document.getElementById('email');
+    const payButton   = document.getElementById('btn-pay');
+
+    // Valores exibidos (ajusta se mudares preços)
+    const UI = {
+      monthly: { plan: 'Premium — Monthly', priceText: '€9.99 / mo', billedText: 'Billed monthly' },
+      yearly:  { plan: 'Premium — Yearly',  priceText: '€95.88 / yr', billedText: 'Billed yearly (save 20%)' }
+    };
+
+    // estado
+    let billing = 'monthly'; // default
+
+    function setBilling(mode){
+      billing = mode === 'yearly' ? 'yearly' : 'monthly';
+
+      // UI buttons
+      btnMonthly.classList.toggle('active', billing === 'monthly');
+      btnYearly.classList.toggle('active', billing === 'yearly');
+
+      // update summary text
+      const vals = UI[billing];
+      if(vals){
+        sumPlan.textContent = vals.plan;
+        sumPrice.textContent = vals.priceText;
+        sumBilled.textContent = vals.billedText;
+      }
+    }
+
+    // Eventos
+    btnMonthly.addEventListener('click', () => setBilling('monthly'));
+    btnYearly.addEventListener('click', () => setBilling('yearly'));
+
+    // Form submit -> cria checkout session
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      payButton.disabled = true;
+      payButton.textContent = 'Redirecting...';
+
+      const customerEmail = (inputEmail.value || '').trim() || undefined;
+
+      try {
+        console.log('Sending checkout request', { billing, customerEmail });
+
+        const res = await fetch('/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ billing, customerEmail })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.url) {
+          // redireciona para o Stripe Checkout
+          window.location = data.url;
+        } else {
+          console.error('Checkout error', data);
+          alert('Erro ao criar sessão de pagamento: ' + (data.error || JSON.stringify(data)));
+          payButton.disabled = false;
+          payButton.textContent = 'Pay now';
+        }
+      } catch (err) {
+        console.error('Fetch error', err);
+        alert('Erro de rede ao criar sessão de pagamento.');
+        payButton.disabled = false;
+        payButton.textContent = 'Pay now';
+      }
+    });
+
+    // Inicializa UI
+    setBilling('monthly');
+  })();
+  </script>
+
 </body>
 </html>
+  
