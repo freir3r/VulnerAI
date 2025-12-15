@@ -228,10 +228,95 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const LS_KEY = "vulnerai.targets";
 const LS_SCANS = "vulnerai.scans";
 
-function loadTargets() {
-  try { state.targets = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
-  catch (_) { state.targets = []; }
+/* ====== PERSISTENCE UPDATED (FIXED INITIALIZATION) ====== */
+/* ====== PERSISTENCE UPDATED (FINAL) ====== */
+async function loadTargets() {
+    console.log('⏳ Initializing Firebase to fetch targets...');
+    
+    try {
+        const appMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js');
+        const authMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js');
+        const firestoreMod = await import('https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js');
+        
+        const { initializeApp, getApps, getApp } = appMod;
+        const { getAuth, onAuthStateChanged } = authMod;
+        const { getFirestore, collection, query, where, getDocs } = firestoreMod;
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBuaJdeJSHhn8zvOt3COp1fy987Zx4Da9k",
+            authDomain: "vulnerai.firebaseapp.com",
+            projectId: "vulnerai",
+            storageBucket: "vulnerai.firebasestorage.app",
+            messagingSenderId: "576892753213",
+            appId: "1:576892753213:web:b418a23c16b808c1d4a154",
+            measurementId: "G-K38GLCC5XL"
+        };
+
+        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const user = await new Promise((resolve) => {
+            if (auth.currentUser) {
+                resolve(auth.currentUser);
+            } else {
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    unsubscribe();
+                    resolve(user);
+                });
+            }
+        });
+
+        if (!user) {
+            loadLocalFallback();
+            return;
+        }
+
+        const q = query(collection(db, "Targets"), where("user_id", "==", user.uid));
+        const querySnapshot = await getDocs(q);
+        
+        const fetchedTargets = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            
+            // --- AQUI ESTÁ A ALTERAÇÃO ---
+            // Se data.name existir, usa-o.
+            // Se não, usa data.value (o IP).
+            // Se ambos falharem (raro), usa 'Unknown Target'.
+            const finalName = (data.name && data.name.trim() !== "") ? data.name : data.value;
+
+            fetchedTargets.push({
+                id: doc.id,
+                name: finalName || 'Unknown Target', 
+                value: data.value,
+                kind: data.kind,
+                added_at: data.added_at
+            });
+        });
+        
+        state.targets = fetchedTargets;
+        saveTargets();
+
+    } catch (error) {
+        console.error("❌ Critical Error in loadTargets:", error);
+        loadLocalFallback();
+    }
 }
+
+function loadLocalFallback() {
+    try { state.targets = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch (_) { state.targets = []; }
+}
+
+// Pequena função auxiliar para não repetir código
+function loadLocalFallback() {
+    try { 
+        state.targets = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); 
+        console.log("Loaded targets from LocalStorage fallback.");
+    } catch (_) { 
+        state.targets = []; 
+    }
+}
+
 function saveTargets() {
   localStorage.setItem(LS_KEY, JSON.stringify(state.targets));
 }
@@ -801,20 +886,39 @@ function escapeHtml(s) {
 }
 
 /* ====== POPULATE TARGETS DROPDOWN ====== */
+/* ====== POPULATE TARGETS DROPDOWN (UPDATED) ====== */
 function populateSavedTargetsDropdown() {
   const sel = document.getElementById("ns-choose");
   if (!sel) return;
-  const current = sel.value;
-  sel.innerHTML = `<option value="">Choose from saved targets…</option>`;
+  
+  // Clear existing options, keep the placeholder
+  sel.innerHTML = `<option value="">Choose from saved targets...</option>`;
+  
+  if (state.targets.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No saved targets found";
+    opt.disabled = true;
+    sel.appendChild(opt);
+    return;
+  }
+
   state.targets.forEach(t => {
     const opt = document.createElement("option");
+    
+    // Set the option value to the target's ID so we can look it up later
     opt.value = t.id;
-    opt.textContent = `${t.name} — ${t.value}`;
+    
+    // Display Logic: 
+    // If 'name' exists and is not empty -> show "Name"
+    // Otherwise -> show "Value" (IP/CIDR)
+    if (t.name && t.name.trim() !== "") {
+        opt.textContent = t.name;
+    } else {
+        opt.textContent = t.value;
+    }
+    
     sel.appendChild(opt);
   });
-  if (current && state.targets.some(t => t.id === current)) {
-    sel.value = current;
-  }
 }
 
 /* ====== DEMO DATA ====== */
@@ -1937,7 +2041,7 @@ async function init() {
   const isDark = themeQuick ? (themeQuick === "dark") : false;
   document.body.classList.toggle("dark", isDark);
 
-  loadTargets();
+await loadTargets();
   populateSavedTargetsDropdown();
 
   // Carregar scans da Firebase no início
