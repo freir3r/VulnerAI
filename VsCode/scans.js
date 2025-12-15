@@ -61,9 +61,6 @@ class NmapScanAPI {
     });
   }
 
-  // REMOVIDO: startDeepSingleScan
-  // REMOVIDO: startDeepMultipleScan
-
   async getScanStatus(scanId) {
     return await this._makeRequest(`/scan/${scanId}`);
   }
@@ -655,12 +652,56 @@ function showActiveScanView(scanData = null) {
   if (scanData) {
     loading.style.display = 'block';
     results.style.display = 'none';
-    document.getElementById('loading-target').textContent =
-      scanData.targetValue || scanData.scan_name || 'Target';
+    
+    // --- UPDATED LOADING HTML WITH CANCEL BUTTON ---
+    const targetName = scanData.targetValue || scanData.scan_name || 'Target';
+    
+    // We inject the entire loading structure here to ensure the button exists
+    loading.innerHTML = `
+      <div class="scan-loader">
+        <div class="spinner"></div>
+        <h3>Scanning ${escapeHtml(targetName)}...</h3>
+        <p class="text-muted">This may take a few minutes depending on the scan depth.</p>
+        
+        <div class="progress-bar-container">
+          <div class="progress-fill" style="width: 0%"></div>
+        </div>
+        <p class="progress-text">Initializing scan...</p>
+
+        <button id="btn-cancel-scan" class="btn-secondary" style="margin-top: 20px; background-color: #333; color: white; border: none;">
+          Cancel Scan
+        </button>
+      </div>
+    `;
+
+    // Attach event listener to the new cancel button
+    const cancelBtn = document.getElementById('btn-cancel-scan');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Open the cancel confirmation modal
+            const modal = document.getElementById('modal-cancel-confirm');
+            if (modal) {
+                modal.setAttribute('aria-hidden', 'false');
+            } else {
+                console.error("Cancel modal not found!");
+            }
+        });
+    }
+
     animateProgress();
   }
 }
 
+function cancelCurrentScan(scanId) {
+  if (confirm('Are you sure you want to cancel viewing this scan? The scan will continue running in the background.')) {
+    // 1. Stop polling for updates
+    stopScanPolling(scanId);
+    
+    // 2. Return to history view
+    showScansHistoryView();
+  }
+}
 
 async function showScansHistoryView() {
   document.getElementById('view-active-scan').style.display = 'none';
@@ -1731,7 +1772,109 @@ function checkUrlForTarget() {
   }
 }
 
-/* ====== AUTO-OPEN NEW SCAN MODAL ====== */
+/* ====== CANCEL CONFIRMATION MODAL ====== */
+/* ====== CANCEL CONFIRMATION MODAL (FIXED STYLES) ====== */
+function injectCancelModal() {
+  // Prevent duplicate injection
+  if (document.getElementById('modal-cancel-confirm')) return;
+
+  // We add specific styles for this modal to ensure it floats correctly
+  const styles = `
+    <style>
+      #modal-cancel-confirm {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 9999;
+        display: none; /* Hidden by default */
+        align-items: center;
+        justify-content: center;
+      }
+      
+      /* Only show when aria-hidden is false */
+      #modal-cancel-confirm[aria-hidden="false"] {
+        display: flex;
+      }
+
+      #modal-cancel-confirm .backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+        z-index: 1;
+      }
+
+      #modal-cancel-confirm .dialog {
+        position: relative;
+        background: #fff;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+        z-index: 2;
+        border: 1px solid #e5e7eb;
+      }
+
+      /* Dark mode support */
+      body.dark #modal-cancel-confirm .dialog {
+        background: #1f2937; /* Dark gray */
+        border-color: #374151;
+        color: #fff;
+      }
+      
+      body.dark #modal-cancel-confirm h3 {
+        color: #fff !important;
+      }
+    </style>
+  `;
+
+  const modalHTML = `
+    ${styles}
+    <div id="modal-cancel-confirm" aria-hidden="true">
+      <div class="backdrop" id="cancel-backdrop"></div>
+      <div class="dialog">
+        <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 1.25rem; font-weight: 600; color: #111827;">Stop Viewing Scan?</h3>
+        <p class="text-muted" style="margin-bottom: 25px; color: #6b7280; font-size: 0.95rem; line-height: 1.5;">
+          The scan will be canceled and you will return to the previous page. Are you sure you want to proceed?
+        </p>
+        <div class="actions" style="display: flex; gap: 12px; justify-content: center;">
+          <button id="btn-cancel-no" class="btn-secondary" style="padding: 8px 20px; border-radius: 6px; cursor: pointer;">No</button>
+          <button id="btn-cancel-yes" class="btn-primary" style="padding: 8px 20px; border-radius: 6px; background-color: #000; color: white; border: 1px solid #000; cursor: pointer;">Yes</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+  // Wire up the buttons
+  document.getElementById('btn-cancel-no').addEventListener('click', () => {
+    document.getElementById('modal-cancel-confirm').setAttribute('aria-hidden', 'true');
+  });
+
+  document.getElementById('cancel-backdrop').addEventListener('click', () => {
+    document.getElementById('modal-cancel-confirm').setAttribute('aria-hidden', 'true');
+  });
+
+  document.getElementById('btn-cancel-yes').addEventListener('click', () => {
+    // Stop the frontend polling
+    if (typeof activePolling !== 'undefined') {
+        activePolling.forEach((interval) => clearInterval(interval));
+        activePolling.clear();
+    }
+    
+    // RELOAD THE PAGE to return to history state
+    window.location.reload();
+  });
+}
+
 /* ====== AUTO-OPEN NEW SCAN MODAL ====== */
 function checkUrlForAutoStart() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -1787,6 +1930,8 @@ async function init() {
   // AUTO-START NEW SCAN IF URL PARAMS
   checkUrlForAutoStart();
 
+  injectCancelModal();
+
   // DARK MODE
   const themeQuick = localStorage.getItem("vulnerai.theme");
   const isDark = themeQuick ? (themeQuick === "dark") : false;
@@ -1797,7 +1942,8 @@ async function init() {
 
   // Carregar scans da Firebase no início
   state.scans = await loadScans();
-
+  
+  
   /* SIDEBAR */
   const sidebar = document.getElementById("sidebar");
   const burger = document.getElementById("btn-burger");
