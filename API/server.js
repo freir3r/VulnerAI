@@ -758,27 +758,24 @@ const PRESETS = {
   },
 
   // Deep Scan: Updated from file 2 with CVE scanning
-  deep_scan: {
+deep_scan: {
     args: [
-      '-sS',                        // TCP SYN scan (fast, stealthy)
-      '-sV',
-      '-O',
-      '--osscan-limit',                        // Service/version detection
-      '--version-intensity', '9',   // Aggressive version detection
-      '--script-timeout', '60s',  // Script timeout
-      '--script', 'default,vuln,banner,vulners',
+      '--unprivileged',       // Evita erros de permissões
+      '-sT',                  // Connect Scan (Obrigatório em Docker)
+      '-Pn',                  // Não faz Ping
+      '-n',                   // Não resolve DNS (Crucial!)
+      
+      '-sV',                  // Detetar Versão
+      '--version-intensity', '2', // Intensidade Leve (Para o Nginx não rejeitar)
+      
+      '--script', 'vulners,http-title,banner',
       '--script-args', 'vulners.showall',
-      '--top-ports', '1000',                        // Scan all ports
-      '-T4',                        // Faster timing for LAN/in-lab
-      '--min-rate', '700',          // Minimum packet rate
-      '--max-retries', '2',         // Avoid excessive retries
-      '--host-timeout', '10m',      // Timeout per host
-      '--open',                     // Show only open ports
-      '--reason',                   // Show reason why port is open/closed
-      '-PR',
-      '--system-dns',                // Use system DNS
-      '-R',
-      '-oX', '-'                     // Output in XML (can be parsed)
+      '--script-timeout', '2m',
+      
+      '--top-ports', '1000',  // Podes usar as 1000 portas mais comuns
+      
+      '--open',
+      '-oX', '-'
     ],
     calculateTimeout: function (target) {
       const hostCount = estimateHostCount(target);

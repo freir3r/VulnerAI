@@ -74,7 +74,8 @@ class NmapScanAPI {
   }
 }
 
-const nmapAPI = new NmapScanAPI('http://localhost:3000');
+// Aponta para o Ingress (porta 80 é automática se não especificares porta)
+const nmapAPI = new NmapScanAPI('http://localhost');
 
 /* ====== AUTH ====== */
 const AUTH_KEY = 'vulnerai.auth';
@@ -2406,7 +2407,7 @@ await loadTargets();
         console.log('📡 Making AI request to:', `/scan/${scanId}/ai-heuristics`);
 
         const response = await fetch(
-          `http://localhost:3000/scan/${scanId}/ai-heuristics`,
+          `http://localhost:/scan/${scanId}/ai-heuristics`,
           {
             method: 'GET',
             headers: headers,
